@@ -123,8 +123,8 @@ SUBCATEGORY_NAMES = SUBCATEGORY_MAPPER.names
 
 
 class SplitwiseUserId(IntEnum):
-    SELF_EXPENSE = 113553156
-    PARTNER_EXPENSE = 5078839
+    SELF_EXPENSE = 5078839
+    PARTNER_EXPENSE = 113553156
 
 
 class ExcludedSplitwiseDescriptions(StrEnum):
