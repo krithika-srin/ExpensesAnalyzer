@@ -56,7 +56,8 @@ See [docs/database_sync_guide.md](docs/database_sync_guide.md) for detailed arch
 2. Activate the environment: `source .venv/bin/activate`
 3. Install dependencies: `pip install -r requirements.txt`
 4. Add your API keys to `config/.env`
-5. Set PYTHONPATH: `export PYTHONPATH=/home/balaji94/PycharmProjects/SplitwiseImporter`
+5. **Configure Splitwise IDs**: Open `src/constants/splitwise.py` and update the `SplitwiseUserId` enum. Set `PARTNER_EXPENSE` to your partner's actual Splitwise ID. Set `SELF_EXPENSE` to `0` (unless you use a dedicated dummy user for self-expenses). If this is not set correctly, your transaction split types will be evaluated inaccurately.
+6. Set PYTHONPATH: `export PYTHONPATH=$(pwd)`
 
 ## Quick Start
 

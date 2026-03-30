@@ -123,8 +123,8 @@ SUBCATEGORY_NAMES = SUBCATEGORY_MAPPER.names
 
 
 class SplitwiseUserId(IntEnum):
-    SELF_EXPENSE = 5078839
-    PARTNER_EXPENSE = 113553156
+    SELF_EXPENSE = 0  # 0 disables dummy user matching, falling back to algorithmic detection
+    PARTNER_EXPENSE = 102736
 
 
 class ExcludedSplitwiseDescriptions(StrEnum):
