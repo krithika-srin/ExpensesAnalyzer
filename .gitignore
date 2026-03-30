@@ -6,3 +6,4 @@ config/gsheets_authentication.json
 .ipynb_checkpoints/
 .idea/
 data/
+.venv
