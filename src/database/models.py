@@ -1,7 +1,7 @@
 """Transaction data model."""
 
 from dataclasses import dataclass, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 
@@ -73,18 +73,18 @@ class Transaction:
         self.written_to_sheet = True
         self.sheet_year = year
         self.sheet_row_id = row_id
-        self.updated_at = datetime.utcnow().isoformat()
+        self.updated_at = datetime.now(timezone.utc).isoformat()
 
     def update_splitwise_id(self, splitwise_id: int):
         """Update with Splitwise expense ID after creation."""
         self.splitwise_id = splitwise_id
         self.is_shared = True
-        self.updated_at = datetime.utcnow().isoformat()
+        self.updated_at = datetime.now(timezone.utc).isoformat()
 
     def mark_deleted_in_splitwise(self):
         """Mark transaction as deleted in Splitwise."""
-        self.splitwise_deleted_at = datetime.utcnow().isoformat()
-        self.updated_at = datetime.utcnow().isoformat()
+        self.splitwise_deleted_at = datetime.now(timezone.utc).isoformat()
+        self.updated_at = datetime.now(timezone.utc).isoformat()
 
 
 @dataclass

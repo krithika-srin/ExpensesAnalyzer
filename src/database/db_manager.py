@@ -2,7 +2,7 @@
 
 import sqlite3
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import cache
 from typing import List, Optional, Dict, Any
 from contextlib import contextmanager
@@ -176,7 +176,7 @@ class DatabaseManager:
             return False
 
         # Always update updated_at timestamp
-        updates["updated_at"] = datetime.utcnow().isoformat()
+        updates["updated_at"] = datetime.now(timezone.utc).isoformat()
 
         with self.transaction() as conn:
             cursor = conn.cursor()
@@ -207,7 +207,7 @@ class DatabaseManager:
                     updated_at = ?
                 WHERE id IN ({placeholders})
             """
-            cursor.execute(query, [year, datetime.utcnow().isoformat()] + txn_ids)
+            cursor.execute(query, [year, datetime.now(timezone.utc).isoformat()] + txn_ids)
 
     # ==================== Queries ====================
 
@@ -665,7 +665,7 @@ class DatabaseManager:
             return False
 
         return self.update_transaction(
-            txn.id, {"splitwise_deleted_at": datetime.utcnow().isoformat()}
+            txn.id, {"splitwise_deleted_at": datetime.now(timezone.utc).isoformat()}
         )
 
     def get_transactions_with_splitwise_ids(
@@ -730,7 +730,7 @@ class DatabaseManager:
         conn = self.get_connection()
         cursor = conn.cursor()
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         cursor.execute(
             """
@@ -824,7 +824,7 @@ class DatabaseManager:
 
         cursor.execute(
             "UPDATE monthly_summaries SET written_to_sheet = 1, updated_at = ? WHERE year_month = ?",
-            (datetime.utcnow().isoformat(), year_month),
+            (datetime.now(timezone.utc).isoformat(), year_month),
         )
 
         conn.commit()

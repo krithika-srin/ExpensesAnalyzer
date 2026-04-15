@@ -432,6 +432,33 @@ def parse_date(s: str) -> date:
     return parsed.date()
 
 
+def normalize_splitwise_date_to_local(date_str: str) -> str:
+    """Normalize Splitwise date/time strings into a local YYYY-MM-DD date.
+
+    Some Splitwise API results include UTC timestamps like
+    "2026-04-07T02:35:44Z". Those should be converted to the local calendar
+    date before storing/exporting so the sheet matches the user-visible Splitwise
+    date.
+    """
+    if not date_str:
+        return date_str
+
+    try:
+        parsed = dateparser.parse(str(date_str))
+        if parsed is None:
+            raise ValueError("Could not parse date")
+
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone()
+
+        return parsed.date().isoformat()
+    except Exception:
+        normalized = str(date_str)
+        if "T" in normalized:
+            return normalized.split("T")[0]
+        return normalized
+
+
 def parse_float_safe(v) -> float:
     try:
         return float(v)

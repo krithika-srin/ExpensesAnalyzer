@@ -4,6 +4,7 @@ Provides common filtering logic for deleted expenses, payments, refunds, etc.
 Centralizes these checks to avoid duplication across the codebase.
 """
 
+import re
 from typing import Any
 from src.constants.splitwise import DELETED_AT_FIELD, REFUND_KEYWORDS
 
@@ -97,3 +98,42 @@ def is_excluded_description(description: str) -> bool:
     """
     # Currently only excludes payment/settlement transactions
     return is_payment_transaction(description)
+
+
+def extract_participant_names(notes: str) -> str:
+    """Extract participant names from transaction notes.
+
+    Extracts the comma-separated list of names from the "With: name1, name2"
+    field in transaction notes.
+
+    Args:
+        notes: Transaction notes field
+
+    Returns:
+        Comma-separated participant names, or empty string if not found
+    """
+    if not notes:
+        return ""
+
+    with_match = re.search(r"With:\s*([^|]+?)(?:\s*$|\s*\|)", notes)
+    if with_match:
+        return with_match.group(1).strip()
+
+    return ""
+
+
+def is_user_participant(txn, current_user_name: str) -> bool:
+    """Check if current user is a participant in the transaction.
+
+    Args:
+        txn: Transaction object from database
+        current_user_name: Current user's first name from Splitwise
+
+    Returns:
+        True if user is in the participant list, False otherwise
+    """
+    if not current_user_name or not txn.notes:
+        return True  # Allow if we can't determine
+
+    participant_names = extract_participant_names(txn.notes)
+    return current_user_name in participant_names

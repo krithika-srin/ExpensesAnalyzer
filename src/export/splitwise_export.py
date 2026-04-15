@@ -32,6 +32,7 @@ load_project_env()
 
 from src.common.sheets_sync import write_to_sheets, read_from_sheets
 from src.common.splitwise_client import SplitwiseClient
+from src.common.transaction_filters import extract_participant_names, is_user_participant
 from src.common.utils import (
     load_state,
     save_state_atomic,
@@ -260,7 +261,6 @@ def fetch_from_database(
         # or: "cc_reference_id: XXX | Imported from Splitwise API | ..."
         my_paid = 0.0
         my_owed = 0.0
-        participant_names = ""
         details = ""
 
         if txn.notes:
@@ -270,23 +270,21 @@ def fetch_from_database(
                 details = cc_ref_match.group(1)
 
             # Extract MY_PAID
-            paid_match = re.search(r"Paid:\s*\$?([\d,]+\.?\d*)", txn.notes)
+            paid_match = re.search(r"Paid:\s*\$?\s*(-?[\d,]+\.?\d*)", txn.notes)
             if paid_match:
                 my_paid = float(paid_match.group(1).replace(",", ""))
 
             # Extract MY_OWED
-            owe_match = re.search(r"Owe:\s*\$?([\d,]+\.?\d*)", txn.notes)
+            owe_match = re.search(r"Owe:\s*\$?\s*(-?[\d,]+\.?\d*)", txn.notes)
             if owe_match:
                 my_owed = float(owe_match.group(1).replace(",", ""))
 
-            # Extract participant names
-            with_match = re.search(r"With:\s*([^|]+?)(?:\s*$|\s*\|)", txn.notes)
-            if with_match:
-                participant_names = with_match.group(1).strip()
-
         # Skip transactions where the current user is not a participant
-        if current_user_name and current_user_name not in participant_names:
+        if not is_user_participant(txn, current_user_name):
             continue
+
+        # Extract participant names for the row
+        participant_names = extract_participant_names(txn.notes)
 
         # Check if this is a refund (either flagged in DB or detected by description)
         description = txn.description or txn.merchant or ""
@@ -724,12 +722,12 @@ Examples:
     parser.add_argument(
         "--start-date",
         default=get_env("START_DATE"),
-        help="Start date (any parseable date string, e.g., '2023-01-01' or '3 months ago'). Defaults to START_DATE env var.",
+        help="Start date (any parseable date string). Defaults to START_DATE env var or current year start.",
     )
     parser.add_argument(
         "--end-date",
         default=get_env("END_DATE"),
-        help="End date (any parseable date string, e.g., '2023-12-31' or 'today'). Defaults to END_DATE env var.",
+        help="End date (any parseable date string). Defaults to END_DATE env var or current year end.",
     )
     parser.add_argument(
         "--worksheet-name",
@@ -792,9 +790,11 @@ Examples:
 
     if args.source == SOURCE_SPLITWISE:
         if not args.start_date:
-            raise ValueError(ERROR_START_DATE_REQUIRED)
+            args.start_date = f"{datetime.now().year}-01-01"
+            LOG.info("No start date provided, defaulting to %s", args.start_date)
         if not args.end_date:
-            raise ValueError(ERROR_END_DATE_REQUIRED)
+            args.end_date = f"{datetime.now().year}-12-31"
+            LOG.info("No end date provided, defaulting to %s", args.end_date)
 
     # Parse dates (use shared parse_date in src.utils)
     if args.year:

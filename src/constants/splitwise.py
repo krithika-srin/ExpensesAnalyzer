@@ -10,6 +10,9 @@ from enum import IntEnum, StrEnum
 from pathlib import Path
 from typing import Dict
 
+# Local application
+from src.common.env import get_env
+
 # Marker used to identify imported transactions in Splitwise descriptions
 IMPORTED_ID_MARKER = "[ImportedID:"
 
@@ -123,8 +126,8 @@ SUBCATEGORY_NAMES = SUBCATEGORY_MAPPER.names
 
 
 class SplitwiseUserId(IntEnum):
-    SELF_EXPENSE = 0  # 0 disables dummy user matching, falling back to algorithmic detection
-    PARTNER_EXPENSE = 102736
+    SELF_EXPENSE = int(get_env("SPLITWISE_SELF_ID", "0"))
+    PARTNER_EXPENSE = int(get_env("SPLITWISE_PARTNER_ID", "0"))
 
 
 class ExcludedSplitwiseDescriptions(StrEnum):

@@ -22,7 +22,12 @@ from splitwise.user import ExpenseUser
 # Local application
 from src.common.env import load_project_env
 from src.common.transaction_filters import is_deleted_expense
-from src.common.utils import LOG, infer_category, parse_float_safe
+from src.common.utils import (
+    LOG,
+    infer_category,
+    normalize_splitwise_date_to_local,
+    parse_float_safe,
+)
 from src.constants.export_columns import ExportColumns
 from src.constants.splitwise import (
     DEFAULT_CURRENCY,
@@ -339,7 +344,9 @@ class SplitwiseClient:
 
                 data.append(
                     {
-                        ExportColumns.DATE: expense.getDate(),
+                        ExportColumns.DATE: normalize_splitwise_date_to_local(
+                            expense.getDate()
+                        ),
                         ExportColumns.AMOUNT: expense.getCost(),
                         ExportColumns.CATEGORY: (
                             expense.getCategory().getName()
@@ -426,7 +433,7 @@ class SplitwiseClient:
         # -------------------------
         normalized = {
             "id": exp.getId(),
-            "date": exp.getDate(),
+            "date": normalize_splitwise_date_to_local(exp.getDate()),
             "description": exp.getDescription(),
             "cost": parse_float_safe(exp.getCost()),
             "details": exp.getDetails() or "",
@@ -496,7 +503,7 @@ class SplitwiseClient:
         # -------------------------
         normalized = {
             "id": exp.getId(),
-            "date": exp.getDate(),
+            "date": normalize_splitwise_date_to_local(exp.getDate()),
             "description": exp.getDescription(),
             "cost": parse_float_safe(exp.getCost()),
             "details": exp.getDetails() or "",

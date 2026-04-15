@@ -269,7 +269,7 @@ Remaining: $325 (65%)
 ### Standard Import (Automatic)
 ```bash
 python src/import_statement/pipeline.py \
-  --statement data/raw/jan2026.csv \
+  --statement data/bank_statements/jan2026.csv \
   --start-date 2026-01-01 \
   --end-date 2026-01-31
 

@@ -10,13 +10,13 @@ This pipeline automates the Phase 3 workflow:
 
 Usage examples:
   # Full pipeline with statement import
-  python src/export/monthly_export_pipeline.py --statement data/raw/jan2026.csv --year 2026 --start-date 2026-01-01 --end-date 2026-01-31
+  python src/export/monthly_export_pipeline.py --statement data/bank_statements/jan2026.csv --year 2026 --start-date 2026-01-01 --end-date 2026-01-31
 
   # Sync and export only (no new statement)
   python src/export/monthly_export_pipeline.py --year 2026 --sync-only
 
   # Dry run to preview changes
-  python src/export/monthly_export_pipeline.py --statement data/raw/jan2026.csv --year 2026 --dry-run
+  python src/export/monthly_export_pipeline.py --statement data/bank_statements/jan2026.csv --year 2026 --dry-run
 """
 
 import argparse
@@ -210,7 +210,7 @@ def main():
 Examples:
   # Full pipeline with new statement
   python src/export/monthly_export_pipeline.py \\
-    --statement data/raw/jan2026.csv \\
+    --statement data/bank_statements/jan2026.csv \\
     --year 2026 \\
     --start-date 2026-01-01 \\
     --end-date 2026-01-31
@@ -220,7 +220,7 @@ Examples:
   
   # Dry run to preview all changes
   python src/export/monthly_export_pipeline.py \\
-    --statement data/raw/jan2026.csv \\
+    --statement data/bank_statements/jan2026.csv \\
     --year 2026 \\
     --dry-run
         """,

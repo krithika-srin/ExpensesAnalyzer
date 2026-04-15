@@ -1,8 +1,6 @@
-boto3
 dateparser>=1.1.0
 pandas
 pygsheets
-python-dateutil
 python-dotenv
 PyYAML
 splitwise

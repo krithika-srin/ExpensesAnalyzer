@@ -12,13 +12,12 @@ It fetches expenses from Splitwise and:
 
 import argparse
 import sys
-from datetime import datetime
+from datetime import datetime as dt, timezone
 from typing import Dict, Set, Any
-
 import traceback
-from datetime import datetime as dt
 
 from src.common.splitwise_client import SplitwiseClient
+from src.common.utils import normalize_splitwise_date_to_local
 from src.database import DatabaseManager, Transaction
 from src.constants.export_columns import ExportColumns
 from src.constants.splitwise import SPLIT_TYPE_SELF, REFUND_KEYWORDS
@@ -36,12 +35,8 @@ def parse_expense_to_transaction(row: Dict[str, Any]) -> Transaction:
     # Extract fields using ExportColumns constants
     expense_id = row.get(ExportColumns.ID)
 
-    # Date - clean up if needed
-    date_str = str(row.get(ExportColumns.DATE, ""))
-    if "T" in date_str:
-        date_val = date_str.split("T")[0]
-    else:
-        date_val = date_str
+    # Date - normalize timezone-aware Splitwise timestamps into local calendar date
+    date_val = normalize_splitwise_date_to_local(str(row.get(ExportColumns.DATE, "")))
 
     description = row.get(ExportColumns.DESCRIPTION, "")
     merchant = description  # Use description as merchant
@@ -107,7 +102,7 @@ def parse_expense_to_transaction(row: Dict[str, Any]) -> Transaction:
         currency="USD",
         splitwise_id=expense_id,
         cc_reference_id=cc_reference_id,
-        imported_at=datetime.utcnow().isoformat(),
+        imported_at=dt.now(timezone.utc).isoformat(),
         notes=notes,
     )
 
@@ -236,9 +231,16 @@ def sync_from_splitwise(
             changes.append(f"amount: ${txn.amount:.2f} → ${sw_amount:.2f}")
             updates["amount"] = sw_amount
 
+        # Check total cost (raw_amount)
+        sw_total_cost = float(expense.get(ExportColumns.AMOUNT, 0))
+        if txn.raw_amount is not None and abs(sw_total_cost - txn.raw_amount) > 0.01:
+            changes.append(f"cost: ${txn.raw_amount:.2f} → ${sw_total_cost:.2f}")
+            updates["raw_amount"] = sw_total_cost
+
         # Check date
-        sw_date_str = str(expense[ExportColumns.DATE])
-        sw_date = sw_date_str.split("T")[0] if "T" in sw_date_str else sw_date_str
+        sw_date = normalize_splitwise_date_to_local(
+            str(expense[ExportColumns.DATE])
+        )
         if sw_date != txn.date:
             changes.append(f"date: {txn.date} → {sw_date}")
             updates["date"] = sw_date

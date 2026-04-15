@@ -20,7 +20,7 @@ def show_samples(n=10):
     if not REVIEW_FILE.exists():
         print(f"ERROR: Review file not found: {REVIEW_FILE}")
         print("Run the pipeline first to generate review data:")
-        print("  python src/pipeline.py --statement data/raw/your_statement.csv")
+        print("  python src/pipeline.py --statement data/bank_statements/your_statement.csv")
         return
 
     df = pd.read_csv(REVIEW_FILE)

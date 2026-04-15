@@ -5,7 +5,7 @@
 Bank type is now determined by **folder structure**, not auto-detection. Much cleaner and more predictable!
 
 ```
-data/raw/
+data/bank_statements/
 ├── amex/amex2026.csv     → Auto-detected as Amex
 └── bofa/bofa_card1_2026.csv → Auto-detected as BoFA
 ```
@@ -14,18 +14,18 @@ data/raw/
 
 ### BoFA Import (from bofa/ folder)
 ```bash
-python src/import_statement/pipeline.py --statement data/raw/bofa/bofa_card1_2026.csv
+python src/import_statement/pipeline.py --statement data/bank_statements/bofa/bofa_card1_2026.csv
 ```
 
 ### Amex Import (from amex/ folder)
 ```bash
-python src/import_statement/pipeline.py --statement data/raw/amex/amex2026.csv
+python src/import_statement/pipeline.py --statement data/bank_statements/amex/amex2026.csv
 ```
 
 ### With Date Range
 ```bash
 python src/import_statement/pipeline.py \
-  --statement data/raw/bofa/bofa_card1_2026.csv \
+  --statement data/bank_statements/bofa/bofa_card1_2026.csv \
   --start-date 2026-02-01 \
   --end-date 2026-02-28
 ```
@@ -37,21 +37,21 @@ python src/import_statement/pipeline.py \
 ### Create folders if they don't exist:
 ```bash
 mkdir -p data/raw/amex
-mkdir -p data/raw/bofa
+mkdir -p data/bank_statements/bofa
 ```
 
 ### File naming (examples):
 ```
-data/raw/amex/amex2025.csv
-data/raw/amex/amex2026.csv
-data/raw/bofa/bofa_card1_2026.csv
-data/raw/bofa/bofa_card2_2026.csv
+data/bank_statements/amex/amex2025.csv
+data/bank_statements/amex/amex2026.csv
+data/bank_statements/bofa/bofa_card1_2026.csv
+data/bank_statements/bofa/bofa_card2_2026.csv
 ```
 
 ## How It Works
 
-1. **Statement in `data/raw/amex/`** → Parsed as Amex format (uses "Description", "Category" fields)
-2. **Statement in `data/raw/bofa/`** → Parsed as BoFA format (uses "Payee", "Reference Number" fields)
+1. **Statement in `data/bank_statements/amex/`** → Parsed as Amex format (uses "Description", "Category" fields)
+2. **Statement in `data/bank_statements/bofa/`** → Parsed as BoFA format (uses "Payee", "Reference Number" fields)
 3. **Each bank uses its own category mapping** (amex_category_mapping.json, bofa_category_mapping.json)
 4. **No need for auto-detection** - folder path determines everything
 

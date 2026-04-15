@@ -125,17 +125,17 @@ class RefundProcessor:
         # Get current user ID
         current_user_id = self.client.get_current_user_id()
 
-        # Default split: SELF paid 100%, SELF_EXPENSE owes 100%
+        # Default split (changed based on user request): SELF_EXPENSE paid 100%, SELF owes 100%
         users = [
             {
-                "user_id": current_user_id,
-                "paid_share": abs(refund_txn.amount),  # SELF received the credit
-                "owed_share": 0,  # SELF doesn't owe anything
+                "user_id": SplitwiseUserId.SELF_EXPENSE,
+                "paid_share": abs(refund_txn.amount),  # Self-account paid
+                "owed_share": 0,  # Self-account doesn't owe
             },
             {
-                "user_id": SplitwiseUserId.SELF_EXPENSE,
-                "paid_share": 0,  # Self-account didn't pay
-                "owed_share": abs(refund_txn.amount),  # Self-account owes it back
+                "user_id": current_user_id,
+                "paid_share": 0,  # SELF didn't pay
+                "owed_share": abs(refund_txn.amount),  # SELF owes it
             },
         ]
 

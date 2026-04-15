@@ -49,9 +49,9 @@ def process_statement(
     if worksheet_name is None:
         worksheet_name = os.getenv("DRY_RUN_WORKSHEET_NAME", "Statement Imports")
     if start_date is None:
-        start_date = os.getenv("START_DATE", "2026-01-01")
+        start_date = os.getenv("START_DATE", f"{dt.now().year}-01-01")
     if end_date is None:
-        end_date = os.getenv("END_DATE", "2026-12-31")
+        end_date = os.getenv("END_DATE", f"{dt.now().year}-12-31")
 
     LOG.info("Processing statement %s (dry_run=%s)", path, dry_run)
     df = parse_statement(path)
@@ -137,7 +137,11 @@ def process_statement(
         # Prefer the parsed `cc_reference_id` produced by `parse_statement()`.
         cc_reference_id = None
         parsed_cc = row.get("cc_reference_id")
-        if parsed_cc is not None and str(parsed_cc).strip().lower() not in ["", "nan", "none"]:
+        if parsed_cc is not None and str(parsed_cc).strip().lower() not in [
+            "",
+            "nan",
+            "none",
+        ]:
             cc_reference_id = str(parsed_cc).strip()
 
         # Fallback: use raw detail only when it looks like an ID (contains digits
@@ -519,8 +523,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python src/import_statement/pipeline.py --statement data/raw/amex2025.csv --dry-run
-  python src/import_statement/pipeline.py --statement data/raw/amex2025.csv --start-date 2025-01-01 --end-date 2025-12-31
+  python src/import_statement/pipeline.py --statement data/bank_statements/amex2025.csv --dry-run
+  python src/import_statement/pipeline.py --statement data/bank_statements/amex2025.csv --start-date 2025-01-01 --end-date 2025-12-31
         """,
     )
     parser.add_argument(

@@ -38,27 +38,28 @@ def read_from_sheets(
     if not spreadsheet_key or not worksheet_name:
         return None
 
-    try:
-        gc = pygsheets.authorize(service_file=SHEETS_AUTHENTICATION_FILE)
-        sheet = gc.open_by_key(spreadsheet_key)
-        worksheet = sheet.worksheet_by_title(worksheet_name)
-        df = worksheet.get_as_df(numerize=numerize, empty_value=None)
-        return df if not df.empty else None
-    except pygsheets.WorksheetNotFound:
-        LOG.debug("Worksheet '%s' not found in spreadsheet", worksheet_name)
-        return None
-    except Exception as e:
-        LOG.warning("Error reading worksheet '%s': %s", worksheet_name, str(e))
-        return None
+    gc = pygsheets.authorize(service_account_file=SHEETS_AUTHENTICATION_FILE)
+    sheet = gc.open_by_key(spreadsheet_key)
+    worksheet = sheet.worksheet_by_title(worksheet_name)
+    df = worksheet.get_as_df(numerize=numerize, empty_value=None)
+    return df if not df.empty else None
 
 
-def _colnum_to_a1(n: int) -> str:
-    # 1 -> A, 27 -> AA
-    s = ""
-    while n > 0:
-        n, r = divmod(n - 1, 26)
-        s = chr(65 + r) + s
-    return s
+def _colnum_to_a1(column_number: int) -> str:
+    """Convert a 1-based column index to its Google Sheets A1 notation.
+
+    Args:
+        column_number: One-based column index (e.g. 1 => A, 27 => AA).
+
+    Returns:
+        The corresponding A1-style column label.
+    """
+    column_label = ""
+    value = column_number
+    while value > 0:
+        value, remainder = divmod(value - 1, 26)
+        column_label = chr(65 + remainder) + column_label
+    return column_label
 
 
 def _ensure_size_for_append(worksheet, start_row: int, num_rows: int, num_cols: int):
@@ -103,7 +104,9 @@ def _apply_column_formats(worksheet, write_data: pd.DataFrame):
         return
 
     if getattr(worksheet, "title", None) == WORKSHEET_MONTHLY_SUMMARY:
-        currency_format = {"numberFormat": {"type": "CURRENCY", "pattern": CURRENCY_FORMAT_PATTERN}}
+        currency_format = {
+            "numberFormat": {"type": "CURRENCY", "pattern": CURRENCY_FORMAT_PATTERN}
+        }
         percentage_format = {"numberFormat": {"type": "PERCENT", "pattern": "0.00%"}}
         for col in ["B", "C", "E", "F", "G"]:
             worksheet.apply_format(f"{col}2:{col}", currency_format)

@@ -42,9 +42,9 @@
         "--start-date",
         "2026-03-01",
         "--end-date",
-        "2026-03-31",
+        "2026-04-30",
         "--statement",
-        "data/raw/bofa/bofa_card2_2026.csv",
+        "data/bank_statements/american express/amex2026.csv",
         "--append-only"
       ]
     },

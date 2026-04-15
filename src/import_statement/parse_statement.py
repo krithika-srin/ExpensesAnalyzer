@@ -6,8 +6,8 @@ Parse CSV statements into a pandas DataFrame with columns:
   - raw_line (string)
 
 Bank-specific parsing is determined by the file's directory:
-  - data/raw/amex/amex2026.csv → Amex format
-  - data/raw/bofa/bofa2026.csv → BoFA format
+  - data/bank_statements/amex/amex2026.csv → Amex format
+  - data/bank_statements/bofa/bofa2026.csv → BoFA format
 """
 
 import os
@@ -16,6 +16,7 @@ import pandas as pd
 
 from src.constants.config import CFG_PATHS
 from src.common.utils import LOG, load_yaml, parse_date_safe
+from src.common.transaction_filters import is_payment_transaction
 from src.import_statement.bank_config import BankConfig
 
 # Load configuration
@@ -64,7 +65,7 @@ def _is_credit(row):
 
 def _is_likely_refund(row):
     """Check if transaction is likely a refund based on description.
-    
+
     Treats any valid credit operation as a refund unless it matches
     known payment/reward patterns.
     """
@@ -75,8 +76,24 @@ def _is_likely_refund(row):
     category_text = row.get("category", "") or ""
     combined_text = f"{row['description']} {category_text}".lower()
 
-    # Exclude payment patterns
-    payment_keywords = ["payment", "autopay", "thank you", "settle", "points for", "reward"]
+    # Exclude payment patterns, including BoFA debit transfers from checking.
+    if is_payment_transaction(row["description"]):
+        return False
+
+    payment_keywords = [
+        "payment",
+        "autopay",
+        "thank you",
+        "settle",
+        "points for",
+        "reward",
+        "recurring from chk",
+        "recurring from checking",
+        "online/mobile recurring",
+        "mobile recurring",
+        "from chk",
+        "from checking",
+    ]
     if any(keyword in combined_text for keyword in payment_keywords):
         return False
 
@@ -88,8 +105,8 @@ def parse_csv(path):
     """Parse a CSV statement file.
 
     Bank format is determined from the file's directory:
-    - data/raw/amex/* → Amex format
-    - data/raw/bofa/* → BoFA format
+    - data/bank_statements/amex/* → Amex format
+    - data/bank_statements/bofa/* → BoFA format
 
     Args:
         path: Path to CSV file
@@ -107,6 +124,9 @@ def parse_csv(path):
     bank_name = BANK_CONFIG.detect_bank_from_path(path)
     LOG.info("Processing %s statement: %s", bank_name, path)
 
+    # Validate CSV headers against bank's required columns
+    BANK_CONFIG.validate_csv_headers(list(dataframe.columns), bank_name)
+
     # Get bank-specific configuration
     bank_cfg = BANK_CONFIG.get_bank_config(bank_name)
 
@@ -115,17 +135,24 @@ def parse_csv(path):
 
     # Map date column
     date_col = bank_cfg.get("date_column")
-    column_mapping["date"] = date_col if date_col in dataframe.columns else _find_column(dataframe, "date")
+    column_mapping["date"] = (
+        date_col if date_col in dataframe.columns else _find_column(dataframe, "date")
+    )
 
     # Map description column (may have multiple options)
     desc_cols = bank_cfg.get("description_columns", [])
     column_mapping["description"] = next(
-        (col for col in desc_cols if col in dataframe.columns), _find_column(dataframe, "description")
+        (col for col in desc_cols if col in dataframe.columns),
+        _find_column(dataframe, "description"),
     )
 
     # Map amount column
     amount_col = bank_cfg.get("amount_column")
-    column_mapping["amount"] = amount_col if amount_col in dataframe.columns else _find_column(dataframe, "amount")
+    column_mapping["amount"] = (
+        amount_col
+        if amount_col in dataframe.columns
+        else _find_column(dataframe, "amount")
+    )
 
     # Map optional columns
     ref_col = bank_cfg.get("reference_column")
@@ -141,7 +168,11 @@ def parse_csv(path):
         column_mapping["address"] = addr_col
 
     # Fallback to first three columns if mapping failed
-    if "date" not in column_mapping or "description" not in column_mapping or "amount" not in column_mapping:
+    if (
+        "date" not in column_mapping
+        or "description" not in column_mapping
+        or "amount" not in column_mapping
+    ):
         col_names = list(dataframe.columns)
         column_mapping["date"] = column_mapping.get("date", col_names[0])
         column_mapping["description"] = column_mapping.get("description", col_names[1])
@@ -152,17 +183,27 @@ def parse_csv(path):
     # Create output dataframe with basic columns
     processed_df = pd.DataFrame()
     processed_df["date"] = dataframe[column_mapping["date"]].apply(parse_date_safe)
-    processed_df["description"] = dataframe[column_mapping["description"]].astype(str).str.strip()
-    processed_df["amount"] = dataframe[column_mapping["amount"]].apply(parse_amount_safe)
+    processed_df["description"] = (
+        dataframe[column_mapping["description"]].astype(str).str.strip()
+    )
+    processed_df["amount"] = dataframe[column_mapping["amount"]].apply(
+        parse_amount_safe
+    )
 
     # Add category column if it exists in the input
     if "category" in column_mapping:
-        processed_df["category"] = dataframe[column_mapping["category"]].astype(str).str.strip()
+        processed_df["category"] = (
+            dataframe[column_mapping["category"]].astype(str).str.strip()
+        )
 
     # Extract cc_reference_id from detail/reference column if available
     if "detail" in column_mapping:
-        processed_df["detail"] = dataframe[column_mapping["detail"]].astype(str).str.strip()
-        processed_df["cc_reference_id"] = processed_df["detail"].apply(extract_reference_id)
+        processed_df["detail"] = (
+            dataframe[column_mapping["detail"]].astype(str).str.strip()
+        )
+        processed_df["cc_reference_id"] = processed_df["detail"].apply(
+            extract_reference_id
+        )
     else:
         processed_df["cc_reference_id"] = None
 
@@ -181,24 +222,43 @@ def parse_csv(path):
     # Filter out transactions with null categories (if category column exists)
     if "category" in processed_df.columns:
         before_filter = len(processed_df)
-        processed_df = processed_df[~processed_df["category"].isin(["None", "null", "", None, "nan"])]
+        processed_df = processed_df[
+            ~processed_df["category"].isin(["None", "null", "", None, "nan"])
+        ]
         null_filtered = before_filter - len(processed_df)
         if null_filtered > 0:
-            LOG.info("[TEMP] Filtered out %d transactions with null/empty categories", null_filtered)
+            LOG.info(
+                "[TEMP] Filtered out %d transactions with null/empty categories",
+                null_filtered,
+            )
 
     # Filter out transactions containing "Fees & Adjustments" in description
     before_fee_filter = len(processed_df)
-    fee_filter = processed_df["description"].str.contains("Fees & Adjustments", case=False, na=False)
+    fee_filter = processed_df["description"].str.contains(
+        "Fees & Adjustments", case=False, na=False
+    )
     filtered_fees = processed_df[fee_filter]
     processed_df = processed_df[~fee_filter]
     fee_filtered = before_fee_filter - len(processed_df)
     if fee_filtered > 0:
-        LOG.info("[TEMP] Filtered out %d transactions containing 'Fees & Adjustments' in description", fee_filtered)
+        LOG.info(
+            "[TEMP] Filtered out %d transactions containing 'Fees & Adjustments' in description",
+            fee_filtered,
+        )
         if not filtered_fees.empty:
             LOG.info("[TEMP] Sample of filtered 'Fees & Adjustments' transactions:")
             for _, row in filtered_fees.head(3).iterrows():
-                truncated_desc = row["description"][:50] + "..." if len(row["description"]) > 50 else row["description"]
-                LOG.info("  [TEMP] %s - %s - $%.2f", row["date"], truncated_desc, row["amount"])
+                truncated_desc = (
+                    row["description"][:50] + "..."
+                    if len(row["description"]) > 50
+                    else row["description"]
+                )
+                LOG.info(
+                    "  [TEMP] %s - %s - $%.2f",
+                    row["date"],
+                    truncated_desc,
+                    row["amount"],
+                )
 
     # Identify credits and refunds
     processed_df["is_credit"] = processed_df.apply(_is_credit, axis=1)
@@ -219,18 +279,32 @@ def parse_csv(path):
     processed_df["amount"] = processed_df["amount"].abs()
 
     # Filter out all non-refund credits (e.g. payments, statement credits, rewards)
-    non_refund_credit_filter = (processed_df["is_credit"]) & (~processed_df["is_refund"])
+    non_refund_credit_filter = (processed_df["is_credit"]) & (
+        ~processed_df["is_refund"]
+    )
     filtered_credits = processed_df[non_refund_credit_filter]
     processed_df = processed_df[~non_refund_credit_filter]
-    
+
     credit_filtered = len(filtered_credits)
     if credit_filtered > 0:
-        LOG.info("[TEMP] Filtered out %d non-refund credit (payment/reward) transactions", credit_filtered)
+        LOG.info(
+            "[TEMP] Filtered out %d non-refund credit (payment/reward) transactions",
+            credit_filtered,
+        )
         if not filtered_credits.empty:
             LOG.info("[TEMP] Sample of filtered credit transactions:")
             for _, row in filtered_credits.head(5).iterrows():
-                truncated_desc = row["description"][:50] + "..." if len(row["description"]) > 50 else row["description"]
-                LOG.info("  [TEMP] %s - %s - $%.2f", row["date"], truncated_desc, row["amount"])
+                truncated_desc = (
+                    row["description"][:50] + "..."
+                    if len(row["description"]) > 50
+                    else row["description"]
+                )
+                LOG.info(
+                    "  [TEMP] %s - %s - $%.2f",
+                    row["date"],
+                    truncated_desc,
+                    row["amount"],
+                )
 
     filtered_count = original_count - len(processed_df)
     if filtered_count > 0:
@@ -244,8 +318,14 @@ def parse_csv(path):
     if not processed_df.empty:
         LOG.info("[TEMP] Sample of transactions after filtering (first 3):")
         for _, row in processed_df.head(3).iterrows():
-            truncated_desc = row["description"][:50] + "..." if len(row["description"]) > 50 else row["description"]
-            LOG.info("  [TEMP] %s - %s - $%.2f", row["date"], truncated_desc, row["amount"])
+            truncated_desc = (
+                row["description"][:50] + "..."
+                if len(row["description"]) > 50
+                else row["description"]
+            )
+            LOG.info(
+                "  [TEMP] %s - %s - $%.2f", row["date"], truncated_desc, row["amount"]
+            )
 
     LOG.info("[TEMP] Transaction filtering complete")
 
@@ -308,19 +388,23 @@ def extract_reference_id(detail_str):
     # Remove obvious prefixes that are not part of an ID
     for prefix in ["REF:", "REFERENCE:", "TXN:", "TRANS:", "ID:"]:
         if raw_detail_str.upper().startswith(prefix):
-            raw_detail_str = raw_detail_str[len(prefix):].strip()
+            raw_detail_str = raw_detail_str[len(prefix) :].strip()
 
     # Prefer explicit patterns: ticket numbers, 'Ticket Number: <digits>', short alphanumeric refs, or 6-25 digit numbers
     patterns = [
-        r"\b(\d{13})\b",                   # 13-digit ticket numbers
+        r"\b(\d{13})\b",  # 13-digit ticket numbers
         r"\bTicket Number\s*[:]?\s*(\d{10,})\b",
-        r"\b([A-Z0-9]{6,12}-?\d{0,4})\b", # short alphanumeric refs (e.g. RPR8EGX8)
+        r"\b([A-Z0-9]{6,12}-?\d{0,4})\b",  # short alphanumeric refs (e.g. RPR8EGX8)
         r"\b(\d{6,25})\b",
     ]
     for pattern in patterns:
         match = re.search(pattern, raw_detail_str)
         if match:
-            groups = [group for group in match.groups() if group] if match.groups() else [match.group(0)]
+            groups = (
+                [group for group in match.groups() if group]
+                if match.groups()
+                else [match.group(0)]
+            )
             # Return the first suitable group (prefer longer)
             for group in sorted(groups, key=len, reverse=True):
                 candidate_id = re.sub(r"[^0-9A-Za-z]", "", group)

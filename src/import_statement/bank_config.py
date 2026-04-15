@@ -49,9 +49,8 @@ class BankConfig:
     def detect_bank_from_path(self, file_path: str) -> str:
         """Detect bank from file path directory structure.
 
-        Expected directory structure:
-        - data/raw/amex/amex2026.csv
-        - data/raw/bofa/bofa2026.csv
+        Uses path_patterns from bank configurations to determine bank type.
+        Expected directory structure: data/bank_statements/{path_pattern}/filename.csv
 
         Args:
             file_path: Path to statement file
@@ -65,21 +64,59 @@ class BankConfig:
         path_obj = Path(file_path)
         parent_dir = path_obj.parent.name.lower()
 
-        # Map directory names to bank names
-        bank_mapping = {
-            "amex": "amex",
-            "bofa": "bofa",
-        }
+        # Check each bank's path_patterns
+        for bank_name, bank_config in self.config["banks"].items():
+            path_patterns = bank_config.get("path_patterns", [])
+            if parent_dir in [pattern.lower() for pattern in path_patterns]:
+                LOG.info("Detected bank from path: %s (directory: %s)", bank_name, parent_dir)
+                return bank_name
 
-        if parent_dir in bank_mapping:
-            bank = bank_mapping[parent_dir]
-            LOG.info("Detected bank from path: %s (directory: %s)", bank, parent_dir)
-            return bank
+        # Build list of expected directories for error message
+        expected_dirs = []
+        for bank_name, bank_config in self.config["banks"].items():
+            patterns = bank_config.get("path_patterns", [])
+            expected_dirs.extend(f"data/bank_statements/{pattern}/" for pattern in patterns)
 
         raise ValueError(
             f"Cannot determine bank from file path: {file_path}. "
-            f"Expected directory: data/raw/amex/ or data/raw/bofa/"
+            f"Expected directories: {', '.join(expected_dirs)}"
         )
+
+    def validate_csv_headers(self, csv_columns: list[str], bank_name: str) -> None:
+        """Validate that CSV columns match the bank's required columns.
+
+        Args:
+            csv_columns: List of column names from the CSV file
+            bank_name: Bank key (e.g., 'amex', 'bofa')
+
+        Raises:
+            ValueError: If required columns are missing
+        """
+        if "detection_rules" not in self.config or bank_name not in self.config["detection_rules"]:
+            LOG.warning("No detection rules found for bank: %s", bank_name)
+            return
+
+        rules = self.config["detection_rules"][bank_name]
+        required_columns = rules.get("required_columns", [])
+
+        # Normalize column names for comparison (case-insensitive)
+        csv_columns_lower = [col.lower() for col in csv_columns]
+        required_lower = [col.lower() for col in required_columns]
+
+        missing_columns = []
+        for req_col in required_lower:
+            if req_col not in csv_columns_lower:
+                # Find the original case version for error message
+                original_req = next((col for col in required_columns if col.lower() == req_col), req_col)
+                missing_columns.append(original_req)
+
+        if missing_columns:
+            raise ValueError(
+                f"CSV file for bank '{bank_name}' is missing required columns: {missing_columns}. "
+                f"Found columns: {csv_columns}"
+            )
+
+        LOG.info("CSV header validation passed for bank: %s", bank_name)
 
     def get_category_mapping(self, bank_name: str) -> Dict[str, str]:
         """Get category mapping for a bank.
