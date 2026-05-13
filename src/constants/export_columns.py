@@ -7,6 +7,7 @@ class ExportColumns(StrEnum):
     DATE = "Date"
     AMOUNT = "Amount"
     CATEGORY = "Category"
+    SUBCATEGORY = "Subcategory"
     DESCRIPTION = "Description"
     DETAILS = "Details"
     SPLIT_TYPE = "Split Type"

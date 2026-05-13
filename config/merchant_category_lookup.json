@@ -1360,5 +1360,265 @@
     "canonical_name": "Yoga",
     "category": "Entertainment",
     "subcategory": "Sports"
+  },
+  "crateandbarrel.com": {
+    "canonical_name": "Crate & Barrel",
+    "category": "Home",
+    "subcategory": "Furniture"
+  },
+  "amazon mktpl": {
+    "canonical_name": "Amazon",
+    "category": "Home",
+    "subcategory": "Household supplies"
+  },
+  "amazon.com": {
+    "canonical_name": "Amazon",
+    "category": "Home",
+    "subcategory": "Household supplies"
+  },
+  "amazon prime": {
+    "canonical_name": "Amazon Prime",
+    "category": "Entertainment",
+    "subcategory": "TV/Movies"
+  },
+  "twinklingtree": {
+    "canonical_name": "Twinkling Tree",
+    "category": "Home",
+    "subcategory": "Household supplies"
+  },
+  "picmagic": {
+    "canonical_name": "PicMagic",
+    "category": "Home",
+    "subcategory": "Services"
+  },
+  "doordash": {
+    "canonical_name": "DoorDash",
+    "category": "Food and drink",
+    "subcategory": "Dining out"
+  },
+  "dd *doordash": {
+    "canonical_name": "DoorDash",
+    "category": "Food and drink",
+    "subcategory": "Dining out"
+  },
+  "anthdl wisma atria": {
+    "canonical_name": "Anthology Wisma Atria",
+    "category": "Life",
+    "subcategory": "Clothing"
+  },
+  "motel mexicola": {
+    "canonical_name": "Motel Mexicola",
+    "category": "Food and drink",
+    "subcategory": "Dining out"
+  },
+  "como theshop sanggingan": {
+    "canonical_name": "Como The Shop",
+    "category": "Life",
+    "subcategory": "Clothing"
+  },
+  "bliss spa bali": {
+    "canonical_name": "Bliss Spa Bali",
+    "category": "Life",
+    "subcategory": "Personal care"
+  },
+  "potterybarn": {
+    "canonical_name": "Pottery Barn",
+    "category": "Home",
+    "subcategory": "Furniture"
+  },
+  "westelm": {
+    "canonical_name": "West Elm",
+    "category": "Home",
+    "subcategory": "Furniture"
+  },
+  "sephora": {
+    "canonical_name": "Sephora",
+    "category": "Life",
+    "subcategory": "Personal care"
+  },
+  "vegamour": {
+    "canonical_name": "Vegamour",
+    "category": "Life",
+    "subcategory": "Personal care"
+  },
+  "aesop": {
+    "canonical_name": "Aesop",
+    "category": "Life",
+    "subcategory": "Personal care"
+  },
+  "shell oil": {
+    "canonical_name": "Shell",
+    "category": "Transportation",
+    "subcategory": "Gas/fuel"
+  },
+  "prime video": {
+    "canonical_name": "Prime Video",
+    "category": "Entertainment",
+    "subcategory": "TV/Movies"
+  },
+  "sjc44 cafe": {
+    "canonical_name": "SJC44 Cafe",
+    "category": "Food and drink",
+    "subcategory": "Dining out"
+  },
+  "cpi vending": {
+    "canonical_name": "Cpi Vending",
+    "category": "Food and drink",
+    "subcategory": "Dining out"
+  },
+  "pacific coffee": {
+    "canonical_name": "Pacific Coffee",
+    "category": "Food and drink",
+    "subcategory": "Dining out"
+  },
+  "google one": {
+    "canonical_name": "Google One",
+    "category": "Utilities",
+    "subcategory": "TV/Phone/Internet"
+  },
+  "target.com": {
+    "canonical_name": "Target",
+    "category": "Food and drink",
+    "subcategory": "Groceries"
+  },
+  "nordstrom": {
+    "canonical_name": "Nordstrom",
+    "category": "Life",
+    "subcategory": "Clothing"
+  },
+  "sephora.com": {
+    "canonical_name": "Sephora",
+    "category": "Life",
+    "subcategory": "Personal care"
+  },
+  "delta air": {
+    "canonical_name": "Delta Air Lines",
+    "category": "Transportation",
+    "subcategory": "Plane"
+  },
+  "uniqlo": {
+    "canonical_name": "Uniqlo",
+    "category": "Life",
+    "subcategory": "Clothing"
+  },
+  "caltrain": {
+    "canonical_name": "Caltrain",
+    "category": "Transportation",
+    "subcategory": "Bus/train"
+  },
+  "michaels stores": {
+    "canonical_name": "Michaels",
+    "category": "Entertainment",
+    "subcategory": "Other"
+  },
+  "payal brow arc": {
+    "canonical_name": "Payal Brow Arc",
+    "category": "Life",
+    "subcategory": "Personal care"
+  },
+  "sk-ii": {
+    "canonical_name": "SK-II",
+    "category": "Life",
+    "subcategory": "Personal care"
+  },
+  "sjc38 marketplace": {
+    "canonical_name": "SJC38 Marketplace",
+    "category": "Food and drink",
+    "subcategory": "Dining out"
+  },
+  "tacobell": {
+    "canonical_name": "Taco Bell",
+    "category": "Food and drink",
+    "subcategory": "Dining out"
+  },
+  "pmts": {
+    "canonical_name": "Amazon",
+    "category": "Home",
+    "subcategory": "Household supplies"
+  },
+  "united": {
+    "canonical_name": "United Airlines",
+    "category": "Transportation",
+    "subcategory": "Plane"
+  },
+  "kohl's": {
+    "canonical_name": "Kohl's",
+    "category": "Life",
+    "subcategory": "Clothing"
+  },
+  "bodyspec": {
+    "canonical_name": "BodySpec",
+    "category": "Life",
+    "subcategory": "Medical expenses"
+  },
+  "bus/mrt": {
+    "canonical_name": "Bus/MRT",
+    "category": "Transportation",
+    "subcategory": "Bus/train"
+  },
+  "in threading salon": {
+    "canonical_name": "In Threading Salon",
+    "category": "Life",
+    "subcategory": "Personal care"
+  },
+  "aig": {
+    "canonical_name": "AIG Insurance",
+    "category": "Life",
+    "subcategory": "Insurance"
+  },
+  "mango.com usa": {
+    "canonical_name": "Mango",
+    "category": "Life",
+    "subcategory": "Clothing"
+  },
+  "gggp.org": {
+    "canonical_name": "GGGP",
+    "category": "Life",
+    "subcategory": "Education"
+  },
+  "abercrombie & fitch": {
+    "canonical_name": "Abercrombie & Fitch",
+    "category": "Life",
+    "subcategory": "Clothing"
+  },
+  "maya mobile": {
+    "canonical_name": "Maya Mobile",
+    "category": "Utilities",
+    "subcategory": "TV/Phone/Internet"
+  },
+  "amoura cafe": {
+    "canonical_name": "Amoura Cafe",
+    "category": "Food and drink",
+    "subcategory": "Dining out"
+  },
+  "maisonaly": {
+    "canonical_name": "Maison Aly",
+    "category": "Food and drink",
+    "subcategory": "Dining out"
+  },
+  "amazon mktplace pmts": {
+    "canonical_name": "Amazon",
+    "category": "Home",
+    "subcategory": "Household supplies"
+  },
+  "doordash tacobell": {
+    "canonical_name": "Taco Bell",
+    "category": "Food and drink",
+    "subcategory": "Dining out"
+  },
+  "doordash subway": {
+    "canonical_name": "Subway",
+    "category": "Food and drink",
+    "subcategory": "Dining out"
+  },
+  "doordash maisonaly": {
+    "canonical_name": "Maison Aly",
+    "category": "Food and drink",
+    "subcategory": "Dining out"
+  },
+  "ic instacart": {
+    "canonical_name": "Instacart",
+    "category": "Food and drink",
+    "subcategory": "Groceries"
   }
 }
