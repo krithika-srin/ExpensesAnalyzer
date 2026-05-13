@@ -1,31 +1,27 @@
-# SplitwiseImporter
+# ExpensesAnalyzer
 
-A robust, automated Python pipeline for managing personal finances by importing credit card statements, categorizing expenses, and syncing them with Splitwise and Google Sheets for budget tracking.
+A streamlined Python workflow for processing Chase bank statements, deduplicating against Google Sheets, and managing expenses with manual review for any timeframe.
 
 ## Project Overview
 
 **Architecture:**
-- **Splitwise** = Source of Truth (Manual edits & split management)
-- **Local SQLite Database** = Synced Mirror (Fast queries & historical archiving)
-- **Google Sheets** = Viewing Layer (Formatted exports & spending analysis)
+- **Google Sheets** = Source of Truth (Manual edits & expense tracking)
+- **Sheet-First Workflow**: Interactive processing with deduplication and review steps
 
 ## Core Features
 
-- **Automated Pipeline**: Single-command ETL (Extract, Transform, Load) for monthly statements.
-- **Smart Categorization**: 200+ merchant mappings with interactive review and auto-correction.
-- **Refund Handling**: Automatic detection and matching of refunds/credits.
-- **Budget Analysis**: Detailed monthly summaries, category breakdowns, and year-over-year trends in Google Sheets.
-- **Historical Archiving**: Complete transaction history (2013-2026) stored locally in SQLite.
-- **Year-Based Exporting**: Clean, structured spreadsheets with separate tabs for each year.
-- **Idempotent Updates**: Smart syncing ensures no duplicate entries and minimal API/Sheet writes.
+- **Interactive Expense Workflow**: Sheet-first processing for Chase statements with manual review.
+- **Flexible Timeframes**: Process expenses for any year or custom date range.
+- **Smart Deduplication**: Multi-layered matching using fingerprints and fuzzy logic (amount, date, merchant).
+- **Category Inference**: Auto-categorization using merchant lookup and patterns.
+- **Google Sheets Integration**: Direct read/write with data validation and formatting.
 
 ## Setup
 1. Create a virtual environment: `python -m venv .venv`
 2. Activate the environment: `source .venv/bin/activate`
 3. Install dependencies: `pip install -r requirements.txt`
 4. Configure environment variables:
-   - Copy the template: `cp config/.env.example config/.env`
-   - Open `config/.env` and add your API keys and configuration (see Environment Variables section below). Note: Make sure your `SPLITWISE_PARTNER_ID` is defined here.
+   - Create `config/.env` with your API keys (SPREADSHEET_KEY, etc.)
 5. Set up Google Sheets access:
    - Place your service account JSON file at `config/gsheets_authentication.json`
    - Share your spreadsheet with the service account email address
@@ -33,200 +29,40 @@ A robust, automated Python pipeline for managing personal finances by importing 
 
 ## Quick Start
 
-### Recommended: Monthly Export Pipeline
+### Expense Processing Workflow
 
-The **Monthly Export Pipeline** is the primary, automated tool for managing your expenses. It handles several steps at once: syncing with Splitwise, importing new statements, exporting to Google Sheets, and generating budget summaries.
-
-#### Mode 1: Full Monthly Pipeline (with Statement Import)
-Use this when you have a new credit card statement to process.
+The primary workflow processes Chase bank statements interactively:
 
 ```bash
-# 1. Activate venv and set PYTHONPATH
+# Activate venv and set PYTHONPATH
 source .venv/bin/activate
 export PYTHONPATH=$PWD
 
-# 2. Run the full pipeline
-# This syncs DB → Imports Statement → Syncs DB Again → Exports to Sheets → Generates Summaries
-python src/export/monthly_export_pipeline.py \
-  --statement data/bank_statements/jan2026.csv \
-  --year 2026 \
-  --start-date 2026-01-01 \
-  --end-date 2026-01-31
+# Run the expense workflow (defaults to current year)
+python scripts/process_2025_expenses.py
+
+# Or specify a year
+python scripts/process_2025_expenses.py --year 2025
+python scripts/process_2025_expenses.py --year 2026
 ```
 
-**What it does:**
-1. **Syncs database** with latest Splitwise data to ensure no duplicates.
-2. **Imports CSV statement** to Splitwise and categorizes transactions.
-3. **Syncs database again** to capture the newly imported expenses.
-4. **Exports to Google Sheets** (default: `Expenses 2026` worksheet).
-5. **Generates Budget Summaries** (e.g., `Monthly Summary`).
+**Workflow Steps:**
+1. Optional: Sync Splitwise to 'Expenses {YEAR}' sheet
+2. Input Chase CSV file path
+3. Load existing sheet for deduplication
+4. Parse, categorize, and dedupe transactions
+5. Write to 'Statement Imports {YEAR}' for review
+6. Manual review in Google Sheets (edit categories/status)
+7. Append approved transactions to 'Expenses {YEAR}'
 
-#### Mode 2: Sync Only Mode (No Statement)
-Use this to refresh your Google Sheets and summaries from existing Splitwise data without importing a new statement.
+## File Structure
 
-```bash
-# Sync and export only
-python src/export/monthly_export_pipeline.py --year 2026 --sync-only
-```
-
-#### Mode 3: Append Only Mode
-By default, the pipeline overwrites the worksheet for a full refresh. Use `--append-only` to only add transactions that haven't been written to the sheet yet.
-
-```bash
-# Append-only export
-python src/export/monthly_export_pipeline.py --year 2026 --sync-only --append-only
-```
-
-#### Dry Run
-Always run with `--dry-run` first to preview changes. For **Full Monthly Pipeline** (Mode 1), the dry run will also write the parsed transactions to a dedicated Google Sheet (default: `Statement Imports`) so you can manually verify categorizations and amounts before actually adding them to Splitwise.
-
-```bash
-# Preview changes for Mode 1 - writes to "Statement Imports" worksheet
-python src/export/monthly_export_pipeline.py \
-  --statement data/bank_statements/jan2026.csv \
-  --year 2026 \
-  --start-date 2026-01-01 \
-  --end-date 2026-01-31 \
-  --dry-run
-
-# Preview changes for Mode 2
-python src/export/monthly_export_pipeline.py --year 2026 --sync-only --dry-run
-```
-
-
-### Export Options
-
-Export from Splitwise API or database to Google Sheets:
-
-```bash
-# Export from database (recommended - faster, filtered)
-python src/export/splitwise_export.py \
-  --source database \
-  --year 2026 \
-  --worksheet "Expenses 2026" \
-  --overwrite
-
-# Export from Splitwise API (live data)
-python src/export/splitwise_export.py \
-  --source splitwise \
-  --start-date 2026-01-01 \
-  --end-date 2026-12-31 \
-  --worksheet "Expenses 2026" \
-  --overwrite
-
-# Dry run to preview
-python src/export/splitwise_export.py \
-  --source database \
-  --year 2026 \
-  --dry-run
-```
-
-**Export features:**
-- 12 columns: Date, Amount, Category, Description, Details (cc_ref), Split Type, Participant Names, My Paid, My Owed, My Net, Splitwise ID, Fingerprint
-- Filters Payment transactions (excluded from sheets but tracked in DB)
-- Overwrite mode for full refresh or default append mode
-
-
-### Bulk Category Updates
-
-Update categories for existing Splitwise expenses in bulk by merchant name or current category:
-
-```bash
-# Update all SpotHero expenses to Transportation > Parking
-python src/update/bulk_update_categories.py --merchant "SpotHero" --subcategory parking
-
-# Update Amazon (excluding AWS) to Household supplies
-python src/update/bulk_update_categories.py --merchant "Amazon" --exclude "AWS" --subcategory household_supplies
-
-# Update Costco expenses currently in "Home - Other" to Household supplies
-python src/update/bulk_update_categories.py --merchant "Costco" --current-category "Home - Other" --subcategory-id 14
-
-# Dry run to preview changes
-python src/update/bulk_update_categories.py --merchant "SpotHero" --subcategory parking --dry-run
-
-# Skip confirmation prompt
-python src/update/bulk_update_categories.py --merchant "Costco" --subcategory household_supplies --yes
-```
-
-**Common Subcategory Options:**
-- `parking` (ID: 9) - Transportation > Parking
-- `household_supplies` (ID: 14) - Home > Household supplies
-- `home_other` (ID: 28) - Home > Other
-- `medical` (ID: 38) - Life > Medical expenses
-- `groceries` (ID: 1) - Food and drink > Groceries
-- `dining_out` (ID: 2) - Food and drink > Dining out
-
-See `src/constants/splitwise.py` (SUBCATEGORY_IDS) for the full list of available subcategories.
-
-Or use `--subcategory-id` with any Splitwise subcategory ID.
-
-
-## Project Structure
-
-```
-SplitwiseImporter/
-├── src/
-│   ├── database/               # Local SQLite database layer
-│   │   ├── schema.py           # Table definitions (transactions, monthly_summaries, etc.)
-│   │   ├── models.py           # Transaction & ImportLog dataclasses
-│   │   └── db_manager.py       # DatabaseManager with CRUD + summary methods
-│   ├── db_sync/                # Database sync utilities
-│   │   └── sync_from_splitwise.py # Sync DB with Splitwise (insert/update/delete)
-│   ├── import_statement/       # CSV statement parsing and import pipeline
-│   │   ├── pipeline.py         # Main ETL pipeline orchestrator
-│   │   ├── parse_statement.py  # CSV parsing and normalization
-│   │   └── categorization.py   # Transaction categorization logic
-│   ├── export/                 # Splitwise data export and summaries
-│   │   ├── splitwise_export.py # Fetch and export Splitwise expenses
-│   │   ├── monthly_export_pipeline.py # Automated 4-step pipeline
-│   │   └── generate_summaries.py # Budget analysis and spending summaries
-│   ├── update/                 # Bulk update utilities
-│   │   ├── update_self_expenses.py # Fix self-expense splits
-│   │   └── bulk_update_categories.py # Bulk category updates
-│   ├── merchant_review/        # Interactive merchant review workflow
-│   │   ├── run_review_workflow.py   # Unified workflow orchestrator (NEW)
-│   │   ├── generate_review_file.py  # Generate review CSV from processed data
-│   │   ├── review_merchants.py      # Interactive review tool
-│   │   └── apply_review_feedback.py # Apply corrections to config
-│   ├── common/                 # Shared utilities
-│   │   ├── splitwise_client.py # Splitwise API wrapper
-│   │   ├── sheets_sync.py      # Google Sheets integration
-│   │   └── utils.py            # Common helper functions (simplified merchant extraction)
-│   └── constants/              # Configuration constants
-├── config/                     # Credentials and mappings
-│   ├── .env                    # API keys (not in git)
-│   ├── merchant_category_lookup.json  # 219+ merchant→category mappings
-│   ├── amex_category_mapping.json     # Amex category mappings
-│   └── gsheets_authentication.json    # Google Sheets credentials
-├── data/
-│   ├── bank_statements/        # Credit card statements
-│   ├── processed/              # Processed outputs and review files
-│   └── transactions.db         # SQLite database
-├── docs/                       # Documentation
-└── notebooks/                  # Jupyter analysis notebooks
-```
-
-
-## Common Workflows
-
-### Monthly Expense Processing Pipeline
-
-The **Monthly Export Pipeline** is the recommended way to process new statements as it ensures all steps (syncing, importing, and exporting) are performed in the correct order.
-
-```bash
-# Process a new statement from start to finish
-python src/export/monthly_export_pipeline.py \
-  --statement data/raw/amex_jan2026.csv \
-  --year 2026 \
-  --start-date 2026-01-01 \
-  --end-date 2026-01-31
-```
-
-**Why the pipeline matters:**
-- **Order of Operations**: It syncs Splitwise data *before* importing to prevent duplicates from overlapping statements.
-- **Retroactive Transactions**: It syncs again *after* importing to capture Splitwise IDs for the new transactions.
-- **Chronological Sorting**: It uses `--overwrite` by default for exports, which re-sorts all expenses chronologically in Google Sheets.
-- **Automation**: It combines 5 manual steps into a single idempotent command.
+- `scripts/process_2025_expenses.py`: Main workflow script (processes any year)
+- `src/common/deduplication_engine.py`: Deduplication logic
+- `src/common/sheets_sync.py`: Google Sheets integration
+- `src/common/utils.py`: Utilities (categorization, parsing)
+- `config/`: Configuration files
+- `data/bank_statements/`: Sample Chase statements
 
 ### First-Time Statement Import
 1. Place your CSV statement in `data/bank_statements/`
