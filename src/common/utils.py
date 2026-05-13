@@ -299,6 +299,9 @@ def clean_merchant_name(description: str, config: Optional[Dict] = None) -> str:
         r"^GglPay\s+",  # Google Pay prefix
         r"^PayPal\s*\*\s*",  # PayPal prefix
         r"^SQ\s*\*\s*",  # Square prefix
+        r"^Dd\s*\*\s*",  # DoorDash prefix
+        r"^Ic\s*\*\s*",  # Instacart prefix
+        r"^Tst\*\s*",    # Toast prefix
     ]
 
     for prefix_pattern in prefixes_to_remove:
@@ -316,11 +319,19 @@ def clean_merchant_name(description: str, config: Optional[Dict] = None) -> str:
     # First part is typically the merchant name
     merchant_name = parts[0].strip()
 
+    # Remove transaction IDs (alphanumeric codes after * or -)
+    # Common in Chase/Amex: "AMAZON MKTPL*N630E0MO0" or "WHOLE FOODS - 12345"
+    merchant_name = re.sub(r"[*][A-Z0-9]{5,}", "", merchant_name)
+    merchant_name = re.sub(r"-\s*[0-9]{5,}", "", merchant_name)
+
     # Remove phone numbers in format (XXX)XXX-XXXX or XXX-XXX-XXXX at the end
     merchant_name = re.sub(r"\s*\(?\d{3}\)?\s*\d{3}-\d{4}\s*$", "", merchant_name)
 
     # Remove state codes at the end (like "CA", "TX", "NY" etc)
     merchant_name = re.sub(r"\s+[A-Z]{2}$", "", merchant_name)
+
+    # Remove trailing numbers that aren't part of the name
+    merchant_name = re.sub(r"\s+\d{3,}$", "", merchant_name)
 
     # Title case the result for readability
     merchant_name = " ".join(word.title() for word in merchant_name.split())
@@ -583,6 +594,37 @@ def _resolve_category_ids(category_path: str) -> Optional[Dict[str, Any]]:
 
     LOG.warning(f"Could not resolve category path: {category_path}")
     return None
+
+
+@cache
+def _load_category_source_mapping() -> Dict[str, str]:
+    """Build {sub_category_name: main_category_name} from the 'Category Source' sheet tab.
+
+    Reads columns 'Main Category' and 'Sub Category'. Some sub names appear under
+    multiple mains (e.g., 'Other'); for ambiguous subs the first row wins —
+    callers that have a Splitwise subcategory_id should disambiguate via
+    [[_load_splitwise_category_ids]] before falling back to this map.
+    """
+    from src.common.sheets_sync import read_from_sheets
+
+    sheet_key = os.getenv("SPREADSHEET_KEY")
+    if not sheet_key:
+        LOG.warning("SPREADSHEET_KEY not set; cannot load Category Source mapping")
+        return {}
+
+    df = read_from_sheets(sheet_key, "Category Source")
+    if df is None or df.empty:
+        LOG.warning("'Category Source' tab is empty or missing")
+        return {}
+
+    mapping: Dict[str, str] = {}
+    for _, row in df.iterrows():
+        main = row.get("Main Category")
+        sub = row.get("Sub Category")
+        if pd.notna(main) and pd.notna(sub) and str(main).strip() and str(sub).strip():
+            mapping.setdefault(str(sub).strip(), str(main).strip())
+    LOG.info(f"Loaded {len(mapping)} subcategory→main mappings from Category Source")
+    return mapping
 
 
 @cache

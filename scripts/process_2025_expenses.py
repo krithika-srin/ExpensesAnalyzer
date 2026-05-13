@@ -31,7 +31,7 @@ from src.common.transaction_filters import is_payment_transaction, is_excluded_d
 
 load_project_env()
 
-def main(year=None):
+def main(year=None, auto_append=False):
     sheet_key = os.getenv("SPREADSHEET_KEY")
     
     # Use provided year or default to current year
@@ -43,6 +43,11 @@ def main(year=None):
 
     if not sheet_key:
         print("Error: SPREADSHEET_KEY not found in .env")
+        return
+
+    if auto_append:
+        print(f"\n--- Append-Only Mode: reading '{imports_worksheet}' and appending to '{expenses_worksheet}' ---")
+        _append_reviewed_rows(sheet_key, imports_worksheet, expenses_worksheet)
         return
 
     print(f"\n--- Step 1: Initial Sync (Optional) ---")
@@ -128,18 +133,18 @@ def main(year=None):
             "amount": amount
         })
         
-        # Generate fingerprint for the record — always abs() to match Splitwise convention
-        amount_abs = abs(amount)
-        fp = generate_fingerprint(date, amount_abs, desc_clean)
-        
+        # Fingerprints always use abs() to match Splitwise's positive-cost convention,
+        # but the Amount column keeps its sign so refunds appear as negative.
+        fp = generate_fingerprint(date, abs(amount), desc_clean)
+
         # Clean subcategory
         subcat = cat_info.get("subcategory_name", "General")
         if str(subcat).endswith("- Other"):
             subcat = "Other"
-        
+
         results.append({
             ExportColumns.DATE: date,
-            ExportColumns.AMOUNT: amount_abs,
+            ExportColumns.AMOUNT: amount,
             ExportColumns.CATEGORY: cat_info.get("category_name", "Uncategorized"),
             ExportColumns.SUBCATEGORY: subcat,
             ExportColumns.DESCRIPTION: desc_clean,
@@ -211,60 +216,48 @@ def main(year=None):
     print(f"Please check the '{imports_worksheet}' tab in your Google Sheet.")
     print("1. Set 'status' to 'SKIP' for any transactions you want to ignore.")
     print("2. Verify/Correct the 'Category' and 'subcategory_name'.")
-    input("\nPress Enter once you have finished the review and are ready to append to 'Expenses 2025'...")
+    print(f"\nExiting. Once review is done, re-run with --auto-append to append approved rows to '{expenses_worksheet}'.")
 
-    print(f"\n--- Step 7: Appending to '{expenses_worksheet}' ---")
+
+def _append_reviewed_rows(sheet_key: str, imports_worksheet: str, expenses_worksheet: str) -> None:
     review_df = read_from_sheets(sheet_key, imports_worksheet)
     if review_df is None or review_df.empty:
-        print("Could not read back the review sheet.")
+        print(f"Could not read '{imports_worksheet}' or it is empty.")
         return
 
-    # Filter for approved transactions
     to_append = review_df[
         review_df['status'].str.upper().isin(['ADD', 'REFUND'])
     ].copy()
 
     if to_append.empty:
-        print("No new transactions to append.")
-    else:
-        # Prepare for Expenses sheet format (matches ExportColumns)
-        # We need to map subcategory_name into the Category column if desired, 
-        # but the standard export often just uses the Category name or path.
-        # Let's keep it simple and just use the columns the Expenses sheet expects.
-        
-        # Select and rename columns to match the Expenses 2025 tab structure
-        final_append = pd.DataFrame()
-        final_append[ExportColumns.DATE] = to_append[ExportColumns.DATE]
-        final_append[ExportColumns.AMOUNT] = to_append[ExportColumns.AMOUNT]
-        
-        # If user updated subcategory, maybe combine them? 
-        # For now, let's just use the Category column as they edited it.
-        final_append[ExportColumns.CATEGORY] = to_append[ExportColumns.CATEGORY]
-        
-        # Add Subcategory support
-        subcat = to_append[ExportColumns.SUBCATEGORY] if ExportColumns.SUBCATEGORY in to_append.columns else "General"
-        # Clean any "- Other" values in Subcategory
-        final_append[ExportColumns.SUBCATEGORY] = subcat.apply(lambda x: "Other" if str(x).endswith("- Other") else x)
-        
-        final_append[ExportColumns.DESCRIPTION] = to_append[ExportColumns.DESCRIPTION]
-        final_append[ExportColumns.DETAILS] = "" # No Splitwise ID
-        final_append[ExportColumns.SPLIT_TYPE] = "self"
-        final_append[ExportColumns.PARTICIPANT_NAMES] = ""
-        final_append[ExportColumns.MY_PAID] = to_append[ExportColumns.AMOUNT]
-        final_append[ExportColumns.MY_OWED] = to_append[ExportColumns.AMOUNT]
-        final_append[ExportColumns.MY_NET] = 0.0
-        final_append[ExportColumns.ID] = ""
-        final_append[ExportColumns.FINGERPRINT] = to_append[ExportColumns.FINGERPRINT]
+        print("No rows with status ADD or REFUND to append.")
+        return
 
-        write_to_sheets(
-            final_append,
-            worksheet_name=expenses_worksheet,
-            spreadsheet_key=sheet_key,
-            append=True
-        )
-        print(f"Successfully appended {len(final_append)} transactions to '{expenses_worksheet}'.")
+    final_append = pd.DataFrame()
+    final_append[ExportColumns.DATE] = to_append[ExportColumns.DATE]
+    final_append[ExportColumns.AMOUNT] = to_append[ExportColumns.AMOUNT]
+    final_append[ExportColumns.CATEGORY] = to_append[ExportColumns.CATEGORY]
 
-    print("\nWorkflow complete! Your spreadsheet is the Source of Truth.")
+    subcat = to_append[ExportColumns.SUBCATEGORY] if ExportColumns.SUBCATEGORY in to_append.columns else "General"
+    final_append[ExportColumns.SUBCATEGORY] = subcat.apply(lambda x: "Other" if str(x).endswith("- Other") else x)
+
+    final_append[ExportColumns.DESCRIPTION] = to_append[ExportColumns.DESCRIPTION]
+    final_append[ExportColumns.DETAILS] = ""
+    final_append[ExportColumns.SPLIT_TYPE] = "self"
+    final_append[ExportColumns.PARTICIPANT_NAMES] = ""
+    final_append[ExportColumns.MY_PAID] = to_append[ExportColumns.AMOUNT]
+    final_append[ExportColumns.MY_OWED] = to_append[ExportColumns.AMOUNT]
+    final_append[ExportColumns.MY_NET] = 0.0
+    final_append[ExportColumns.ID] = ""
+    final_append[ExportColumns.FINGERPRINT] = to_append[ExportColumns.FINGERPRINT]
+
+    write_to_sheets(
+        final_append,
+        worksheet_name=expenses_worksheet,
+        spreadsheet_key=sheet_key,
+        append=True
+    )
+    print(f"Appended {len(final_append)} transactions to '{expenses_worksheet}'.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -276,5 +269,10 @@ if __name__ == "__main__":
         default=None,
         help="Year to process (e.g., 2025, 2026). Defaults to current year."
     )
+    parser.add_argument(
+        "--auto-append",
+        action="store_true",
+        help="Skip the manual-review pause and append approved rows from the review tab directly to the canonical sheet."
+    )
     args = parser.parse_args()
-    main(year=args.year)
+    main(year=args.year, auto_append=args.auto_append)

@@ -79,8 +79,8 @@ class DeduplicationEngine:
                     ex_date = pd.to_datetime(ex_date_val).date()
                     date_diff = abs((ex_date - target_date).days)
                     
-                    # Window check (±3 days)
-                    if date_diff <= 3:
+                    # Window check (±5 days)
+                    if date_diff <= 5:
                         ex_desc = clean_merchant_name(ex_row.get(ExportColumns.DESCRIPTION, ""))
                         
                         # Name check (substring or similarity)

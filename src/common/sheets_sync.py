@@ -113,14 +113,26 @@ def _apply_column_formats(worksheet, write_data: pd.DataFrame):
         worksheet.apply_format("H2:H", percentage_format)
         return
 
-    # Format entire columns so formatting persists even if rows are added later.
-    # Columns B, H, I, J are currency fields (amount, my_paid, my_owed, my_net).
+    # Dynamically find currency column letters based on actual column names in write_data
+    currency_col_names = [
+        ExportColumns.AMOUNT,
+        ExportColumns.MY_PAID,
+        ExportColumns.MY_OWED,
+        ExportColumns.MY_NET,
+    ]
     currency_format = {
         "numberFormat": {"type": "CURRENCY", "pattern": CURRENCY_FORMAT_PATTERN}
     }
-    for col_letter in CURRENCY_COLUMNS:
-        cell_range = f"{col_letter}2:{col_letter}"
-        worksheet.apply_format(cell_range, currency_format)
+    cols = list(write_data.columns)
+    for col_name in currency_col_names:
+        if col_name in cols:
+            idx = cols.index(col_name) + 1  # 1-based
+            col_letter = _colnum_to_a1(idx)
+            cell_range = f"{col_letter}2:{col_letter}"
+            try:
+                worksheet.apply_format(cell_range, currency_format)
+            except Exception as e:
+                LOG.warning("Could not apply currency format to %s: %s", col_letter, e)
 
     # date -> date (column A)
     cols = list(write_data.columns)

@@ -21,9 +21,11 @@ from splitwise.user import ExpenseUser
 
 # Local application
 from src.common.env import load_project_env
-from src.common.transaction_filters import is_deleted_expense
+from src.common.transaction_filters import is_deleted_expense, is_payment_transaction
 from src.common.utils import (
     LOG,
+    _load_category_source_mapping,
+    _load_splitwise_category_ids,
     infer_category,
     normalize_splitwise_date_to_local,
     parse_float_safe,
@@ -38,10 +40,35 @@ from src.constants.splitwise import (
     SPLIT_TYPE_SELF,
     SPLIT_TYPE_SPLIT,
     SPLITWISE_PAGE_SIZE,
-    SplitwiseUserId,
 )
 
 load_project_env()
+
+
+def _resolve_splitwise_category(cat_obj) -> tuple[str, str]:
+    """Map a Splitwise SDK Category object to (main_category, subcategory).
+
+    The SDK's getCategory().getName() returns the subcategory name only. We first
+    look up the unambiguous (main, sub) pair by subcategory_id in
+    splitwise_category_ids.json, then fall back to a name-based lookup in the
+    user's 'Category Source' sheet tab.
+    """
+    if not cat_obj:
+        return "Uncategorized", "General"
+
+    sub_name = cat_obj.getName() or ""
+    sub_id = cat_obj.getId() if hasattr(cat_obj, "getId") else None
+
+    if sub_id:
+        for info in _load_splitwise_category_ids().get("category_mapping", {}).values():
+            if info.get("subcategory_id") == sub_id:
+                return info["category_name"], info["subcategory_name"]
+
+    main = _load_category_source_mapping().get(sub_name)
+    if main:
+        return main, sub_name
+
+    return sub_name or "Uncategorized", "General"
 
 
 # Handles Splitwise API/CSV integration
@@ -59,23 +86,28 @@ class SplitwiseClient:
             self.consumer_key, self.consumer_secret, api_key=self.api_key
         )
 
-    @cache
     def get_current_user(self):
-        """Get current user from Splitwise API.
+        """Fetch current user object from Splitwise API (with caching)."""
+        if hasattr(self, "_current_user") and self._current_user:
+            return self._current_user
+        
+        try:
+            self._current_user = self.sObj.getCurrentUser()
+            return self._current_user
+        except Exception as e:
+            LOG.error(f"Failed to fetch current user: {e}")
+            return None
 
-        Returns:
-            Splitwise User object
-        """
-        return self.sObj.getCurrentUser()
-
-    @cache
     def get_current_user_id(self):
-        """Get current user ID from Splitwise API.
-
-        Returns:
-            int: User ID
-        """
-        return self.get_current_user().getId()
+        """Fetch current user ID (with caching)."""
+        if hasattr(self, "_current_user_id") and self._current_user_id:
+            return self._current_user_id
+            
+        user = self.get_current_user()
+        if user:
+            self._current_user_id = user.getId()
+            return self._current_user_id
+        return None
 
     def _fetch_expenses_paginated(
         self, start_date_str: str, end_date_str: str, fetch_full_details: bool = False
@@ -115,21 +147,19 @@ class SplitwiseClient:
 
                 # Filter out deleted expenses from the basic list
                 non_deleted = [exp for exp in expenses if not is_deleted_expense(exp)]
-
                 all_expenses.extend(non_deleted)
+
+                LOG.debug(f"Fetched {len(expenses)} expenses (total: {len(all_expenses)})")
 
                 if len(expenses) < page_size:
                     has_more = False
                 else:
                     offset += page_size
 
-                LOG.debug(
-                    f"Fetched {len(expenses)} expenses (total: {len(all_expenses)})"
-                )
-
             except Exception as e:
-                LOG.error(f"Error fetching expense list (offset {offset}): {str(e)}")
-                raise
+                LOG.error("Error fetching expense list (offset %d): %s", offset, str(e))
+                # Transient API errors — return whatever we've collected so far
+                break
 
         # If requested, fetch full details for each expense
         if fetch_full_details:
@@ -181,7 +211,7 @@ class SplitwiseClient:
         return cache_dir / cache_name
 
     def fetch_expenses_with_details(
-        self, start_date_str: str, end_date_str: str, use_cache: bool = True
+        self, start_date_str: str, end_date_str: str, use_cache: bool = True, created_by_id: Optional[int] = None
     ):
         """Fetch all expenses within a date range with full details populated.
 
@@ -204,10 +234,26 @@ class SplitwiseClient:
             try:
                 with open(cache_path, "r") as f:
                     cached_data = json.load(f)
+                
+                # Filter out deleted expenses from cache (in case they were deleted since caching)
+                # and filter by created_by_id if requested
+                active_data = {}
+                for exp_id, data in cached_data.items():
+                    # Skip if explicitly deleted in the cache data
+                    if data.get("deleted_at"):
+                        continue
+                    
+                    # Skip if created by someone else (if filtering requested)
+                    if created_by_id is not None and data.get("created_by_id") != created_by_id:
+                        continue
+                        
+                    active_data[exp_id] = data
+                
                 LOG.info(
-                    f"Loaded {len(cached_data)} expenses from disk cache: {cache_path.name}"
+                    f"Loaded {len(active_data)} active expenses from disk cache: {cache_path.name}"
+                    + (f" (filtered for user {created_by_id})" if created_by_id else "")
                 )
-                return cached_data
+                return active_data
             except Exception as e:
                 LOG.warning(f"Failed to load cache from {cache_path}: {e}")
 
@@ -216,10 +262,30 @@ class SplitwiseClient:
             start_date_str, end_date_str, fetch_full_details=True
         )
 
-        # Convert to dict format for duplicate detection
+        # Convert to dict format for duplicate detection with filtering
         expenses_with_details = {}
         for expense in all_expenses:
             expense_id = expense.getId()
+            
+            # Extract created_by_id safely
+            creator_id = (
+                expense.getCreatedBy().getId() if expense.getCreatedBy() else None
+            )
+            
+            # Apply filtering: skip if created by someone else (if filtering requested)
+            if created_by_id is not None and creator_id != created_by_id:
+                continue
+                
+            # Extract user share details
+            users_list = []
+            for u in expense.getUsers():
+                users_list.append({
+                    "user_id": u.getId(),
+                    "paid_share": u.getPaidShare(),
+                    "owed_share": u.getOwedShare(),
+                    "display_name": f"{u.getFirstName() or ''} {u.getLastName() or ''}".strip()
+                })
+
             expenses_with_details[expense_id] = {
                 "id": expense_id,
                 "date": expense.getDate(),
@@ -229,6 +295,8 @@ class SplitwiseClient:
                 "category": (
                     expense.getCategory().getName() if expense.getCategory() else None
                 ),
+                "created_by_id": creator_id,
+                "users": users_list
             }
 
         # Save to disk cache
@@ -268,8 +336,30 @@ class SplitwiseClient:
         my_user_id = self.get_current_user_id()
         data = []
 
+        # Load details cache if available to enrich the shallow list
+        details_cache = {}
+        try:
+            details_cache = self.fetch_expenses_with_details(
+                start_date.strftime("%Y-%m-%d"),
+                end_date.strftime("%Y-%m-%d"),
+                use_cache=True
+            )
+        except Exception as e:
+            LOG.debug(f"Could not load details cache for enrichment: {e}")
+
+        skipped_payments = 0
         for expense in all_expenses:
             try:
+                expense_id = expense.getId()
+
+                # Skip payments/settlements — Splitwise flags these via getPayment(),
+                # and we also catch description-based variants ("Payment", "Settle all balances", autopay, etc.)
+                description = expense.getDescription() or ""
+                is_payment_flag = bool(getattr(expense, "getPayment", lambda: False)())
+                if is_payment_flag or is_payment_transaction(description):
+                    skipped_payments += 1
+                    continue
+
                 users = expense.getUsers() or []
 
                 def _user_name(u) -> str:
@@ -321,26 +411,23 @@ class SplitwiseClient:
 
                 my_net = my_paid - my_owed
 
-                participant_ids = {r["id"] for r in user_rows_sorted}
-
-                has_self_user = SplitwiseUserId.SELF_EXPENSE in participant_ids
-                is_partner_only = participant_ids == {
-                    my_user_id,
-                    SplitwiseUserId.PARTNER_EXPENSE,
+                nonzero_ids = {
+                    r["id"]
+                    for r in user_rows_sorted
+                    if r["paid"] > 0 or r["owed"] > 0
                 }
+                partner_id = int(os.getenv("SPLITWISE_PARTNER_ID", "0")) or None
 
-                if has_self_user:
+                if not nonzero_ids or nonzero_ids == {my_user_id}:
                     split_type = SPLIT_TYPE_SELF
-                elif is_partner_only:
+                elif partner_id and nonzero_ids == {my_user_id, partner_id}:
                     split_type = SPLIT_TYPE_PARTNER
                 else:
-                    other_nonzero = any(
-                        r["id"] != my_user_id and (r["paid"] > 0 or r["owed"] > 0)
-                        for r in user_rows_sorted
-                    )
-                    split_type = (
-                        SPLIT_TYPE_SPLIT if bool(other_nonzero) else SPLIT_TYPE_SELF
-                    )
+                    split_type = SPLIT_TYPE_SPLIT
+
+                main_category, subcategory = _resolve_splitwise_category(
+                    expense.getCategory()
+                )
 
                 data.append(
                     {
@@ -348,13 +435,10 @@ class SplitwiseClient:
                             expense.getDate()
                         ),
                         ExportColumns.AMOUNT: expense.getCost(),
-                        ExportColumns.CATEGORY: (
-                            expense.getCategory().getName()
-                            if expense.getCategory()
-                            else None
-                        ),
+                        ExportColumns.CATEGORY: main_category,
+                        ExportColumns.SUBCATEGORY: subcategory,
                         ExportColumns.DESCRIPTION: expense.getDescription(),
-                        ExportColumns.DETAILS: expense.getDetails() or "",
+                        ExportColumns.DETAILS: details_cache.get(expense_id, {}).get("details", expense.getDetails() or ""),
                         ExportColumns.SPLIT_TYPE: split_type,
                         ExportColumns.PARTICIPANT_NAMES: participant_names,
                         ExportColumns.MY_PAID: my_paid,
@@ -370,7 +454,10 @@ class SplitwiseClient:
                 )
                 continue
 
-        LOG.info(f"Found {len(data)} expenses between {start_date} and {end_date}")
+        LOG.info(
+            f"Found {len(data)} expenses between {start_date} and {end_date} "
+            f"(skipped {skipped_payments} payments/settlements)"
+        )
         return pd.DataFrame(data)
 
     def get_expense_by_id(
@@ -523,6 +610,7 @@ class SplitwiseClient:
         use_detailed_search: bool = False,
         start_date: str = None,
         end_date: str = None,
+        created_by_id: Optional[int] = None,
     ) -> Optional[Dict]:
         """Find an expense by its cc_reference_id or by matching transaction details.
 
@@ -553,7 +641,7 @@ class SplitwiseClient:
                 cc_reference_id = None
 
         # Use detailed search if requested (fetches full details for each expense)
-        if use_detailed_search and cc_reference_id:
+        if use_detailed_search:
             # Use provided date range or default to 2025
             if not start_date or not end_date:
                 if lookback_days:
@@ -568,18 +656,28 @@ class SplitwiseClient:
                     end_date = "2025-12-31"
 
             # Call cached method with string dates
-            expense_cache = self.fetch_expenses_with_details(start_date, end_date)
+            expense_cache = self.fetch_expenses_with_details(start_date, end_date, created_by_id=created_by_id)
 
-            # Search in the cache
-            cc_ref_clean = cc_reference_id.strip().strip("'\"")
+            # Fallback to basic search if engine is missing or disabled
+            # Exact match check in the cache
             for exp_id, exp_data in expense_cache.items():
-                details_clean = str(exp_data.get("details", "")).strip().strip("'\"")
-                if details_clean == cc_ref_clean:
-                    LOG.info(
-                        f"Found expense {exp_id} matching cc_reference_id: {cc_reference_id}"
-                    )
+                if str(exp_data.get('details')).strip().strip("'\"") == cc_reference_id:
+                    LOG.info(f"Exact match found in cache for cc_reference_id: {cc_reference_id}")
                     return exp_data
+                    
+            # Basic fuzzy match in cache
+            for exp_id, exp_data in expense_cache.items():
+                if np.isclose(float(exp_data.get('cost', 0)), float(amount), rtol=1e-5):
+                    # Check date proximity
+                    exp_date = pd.to_datetime(exp_data.get('date')).date()
+                    target_date = pd.to_datetime(date).date()
+                    if abs((exp_date - target_date).days) <= 3:
+                        if merchant and merchant.lower() in str(exp_data.get('description', '')).lower():
+                            LOG.info(f"Fuzzy match found in cache: {exp_data.get('description')}")
+                            return exp_data
+            
             return None
+
 
         # Fallback: Fetch from API (legacy behavior, doesn't have details field)
         # Ensure lookback_days has a sensible default to avoid TypeError when None
@@ -635,17 +733,17 @@ class SplitwiseClient:
 
                 # Filter for same amount (within a small tolerance for floating point)
                 amount_matches = np.isclose(
-                    df["amount"].astype(float), float(amount), rtol=1e-5
+                    df[ExportColumns.AMOUNT].astype(float).abs(), abs(float(amount)), rtol=1e-5
                 )
                 df_filtered = df[amount_matches]
 
                 if not df_filtered.empty:
-                    # Filter for same date
+                    # Filter for same date within 3 days (expanded from 1 day)
                     df_filtered["expense_date"] = pd.to_datetime(
-                        df_filtered["date"]
+                        df_filtered[ExportColumns.DATE]
                     ).dt.date
-                    date_matches = df_filtered["expense_date"] == target_date
-                    df_filtered = df_filtered[date_matches]
+                    date_diffs = (df_filtered["expense_date"] - target_date).dt.days.abs()
+                    df_filtered = df_filtered[date_diffs <= 3]
 
                     if not df_filtered.empty:
                         # If we have merchant info, try to match that too
@@ -828,10 +926,17 @@ class SplitwiseClient:
                 expense_id = created
 
             if expense_id is None:
+                # If it's a SplitwiseError object, try to extract the error messages
+                if hasattr(created, "getErrors") and callable(created.getErrors):
+                    errors = created.getErrors()
+                    LOG.error(f"Splitwise creation failed with errors: {errors}")
+                elif hasattr(created, "errors"):
+                    LOG.error(f"Splitwise creation failed with errors: {created.errors}")
+
                 LOG.error(
                     f"Could not extract expense ID. Type: {type(created)}, Dir: {dir(created) if hasattr(created, '__dict__') else 'N/A'}"
                 )
-                raise RuntimeError("Failed to get expense ID from created expense")
+                raise RuntimeError(f"Failed to create Splitwise expense: {getattr(created, 'errors', 'Unknown error')}")
 
             LOG.info(f"Successfully created expense with ID: {expense_id}")
             return int(expense_id)
@@ -850,17 +955,85 @@ class SplitwiseClient:
         """
         return self.sObj.getCategories()
 
+    def delete_expense(self, expense_id: Union[int, str]) -> bool:
+        """Delete an expense from Splitwise.
+
+        WARNING: This is irreversible via the API.
+
+        Args:
+            expense_id: Splitwise expense ID to delete
+
+        Returns:
+            True if successfully deleted, False otherwise
+        """
+        try:
+            exp_id = int(expense_id)
+            result = self.sObj.deleteExpense(exp_id)
+
+            # The SDK returns True on success, or an error object
+            if result is True or result is None:
+                LOG.info(f"Successfully deleted expense {exp_id} from Splitwise")
+                return True
+            else:
+                LOG.warning(f"Unexpected result deleting expense {exp_id}: {result}")
+                return True  # SDK may return the deleted expense object
+        except Exception as e:
+            LOG.error(f"Failed to delete expense {expense_id}: {str(e)}")
+            return False
+
+    def update_expense_details(self, expense_id: Union[int, str], details: str) -> bool:
+        """Update the details field of an existing expense.
+        
+        This is useful when an expense is found via fuzzy matching and
+        needs to be linked with a stable cc_reference_id for future syncs.
+        """
+        try:
+            exp_id = int(expense_id)
+            # Fetch full expense object from Splitwise
+            exp = self.sObj.getExpense(exp_id)
+            if not exp:
+                LOG.warning(f"Expense {exp_id} not found, cannot update details.")
+                return False
+                
+            # Set the new details (the cc_reference_id)
+            exp.setDetails(str(details))
+            
+            # Update via SDK
+            self.sObj.updateExpense(exp)
+            LOG.info(f"Successfully updated expense {exp_id} with new cc_reference_id: {details}")
+            
+            # Update internal cache so it's persisted on exit
+            sw_id_str = str(exp_id)
+            if hasattr(self, "expense_details_cache"):
+                if sw_id_str not in self.expense_details_cache:
+                    self.expense_details_cache[sw_id_str] = {}
+                self.expense_details_cache[sw_id_str]["details"] = details
+                # Also update other fields if they were missing
+                if "cost" not in self.expense_details_cache[sw_id_str]:
+                    self.expense_details_cache[sw_id_str]["cost"] = str(exp.getCost())
+                if "description" not in self.expense_details_cache[sw_id_str]:
+                    self.expense_details_cache[sw_id_str]["description"] = exp.getDescription()
+                if "date" not in self.expense_details_cache[sw_id_str]:
+                    self.expense_details_cache[sw_id_str]["date"] = exp.getDate()
+            
+            return True
+        except Exception as e:
+            LOG.error(f"Failed to update expense details for {expense_id}: {str(e)}")
+            return False
+
 
 def get_splitwise_client(dry_run: bool = False) -> Optional["SplitwiseClient"]:
-    """Get SplitwiseClient instance (None in dry-run mode).
+    """Get SplitwiseClient instance.
 
     Args:
-        dry_run: If True, returns None (no API calls will be made)
+        dry_run: If True, still returns a client to allow duplicate detection
+                 via cached data, but pipeline should avoid write operations.
 
     Returns:
-        SplitwiseClient instance or None
+        SplitwiseClient instance
     """
-    return None if dry_run else SplitwiseClient()
+    return SplitwiseClient()
+
 
 
 # Example usage:

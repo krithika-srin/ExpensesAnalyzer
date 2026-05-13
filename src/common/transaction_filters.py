@@ -56,8 +56,9 @@ def is_payment_transaction(description: str) -> bool:
         return True
 
     # Check for payment keywords
-    payment_keywords = ["payment", "autopay", "thank you", "settle"]
+    payment_keywords = ["payment", "autopay", "thank you", "settle", "att*"]
     return any(kw in lower for kw in payment_keywords)
+
 
 
 def is_refund_transaction(txn, check_description: bool = True) -> bool:
@@ -96,8 +97,14 @@ def is_excluded_description(description: str) -> bool:
     Returns:
         True if description matches exclusion patterns
     """
-    # Currently only excludes payment/settlement transactions
-    return is_payment_transaction(description)
+    # Exclude payment/settlement transactions and specific merchants
+    if is_payment_transaction(description):
+        return True
+        
+    lower = description.lower()
+    excluded_keywords = ["att* bill payment", "att* payment"]
+    return any(kw in lower for kw in excluded_keywords)
+
 
 
 def extract_participant_names(notes: str) -> str:
@@ -132,8 +139,8 @@ def is_user_participant(txn, current_user_name: str) -> bool:
     Returns:
         True if user is in the participant list, False otherwise
     """
-    if not current_user_name or not txn.notes:
-        return True  # Allow if we can't determine
+    if not current_user_name or not txn.notes or "With:" not in txn.notes:
+        return True  # Allow if no participant list is specified (assume current user)
 
     participant_names = extract_participant_names(txn.notes)
     return current_user_name in participant_names
