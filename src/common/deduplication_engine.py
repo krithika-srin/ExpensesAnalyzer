@@ -92,7 +92,20 @@ class DeduplicationEngine:
                                 "matched_row": ex_row.to_dict()
                             }
                         else:
-                            LOG.debug(f"Amount/Date match but name mismatch: {desc_clean} vs {ex_desc}")
+                            # Try word-overlap check
+                            words_a = set(desc_clean.lower().split())
+                            words_b = set(ex_desc.lower().split())
+                            shared = words_a & words_b
+                            # Match if any shared word is >= 5 chars (significant word, not "the", "and")
+                            if any(len(w) >= 5 for w in shared):
+                                LOG.info(f"Word-overlap Fuzzy Match: {desc_clean} vs {ex_desc} on {ex_date} (Diff: {date_diff}d, shared: {shared})")
+                                return {
+                                    "match_type": "FUZZY",
+                                    "reason": f"Amount match + Date window ({date_diff}d) + Word overlap ({shared})",
+                                    "matched_row": ex_row.to_dict()
+                                }
+                            else:
+                                LOG.debug(f"Amount/Date match but name mismatch: {desc_clean} vs {ex_desc}")
             
         except Exception as e:
             LOG.error(f"Deduplication fuzzy check failed: {e}")

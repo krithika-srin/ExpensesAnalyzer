@@ -6,9 +6,9 @@ Workflow:
 2. Prompt for Chase statement CSV.
 3. Read 'Expenses {YEAR}' and build fingerprints for deduplication.
 4. Parse, categorize, and dedupe Chase transactions against the sheet.
-5. Add new transactions to 'Statement Imports {YEAR}' tab for review.
-6. Wait for user to review/update 'Statement Imports {YEAR}' (SKIP or category changes).
-7. Append approved transactions from 'Statement Imports {YEAR}' to 'Expenses {YEAR}'.
+5. Add new transactions to 'Chase' tab for review.
+6. Wait for user to review/update 'Chase' (SKIP or category changes).
+7. Append approved transactions from 'Chase' to 'Expenses {YEAR}'.
 """
 
 import argparse
@@ -31,15 +31,22 @@ from src.common.transaction_filters import is_payment_transaction, is_excluded_d
 
 load_project_env()
 
-def main(year=None, auto_append=False):
+def main(from_date=None, to_date=None, auto_append=False):
     sheet_key = os.getenv("SPREADSHEET_KEY")
     
-    # Use provided year or default to current year
-    if year is None:
+    # Defaults to current year's range if not provided
+    if not from_date:
+        from_date = f"{datetime.now().year}-01-01"
+    if not to_date:
+        to_date = f"{datetime.now().year}-12-31"
+
+    try:
+        year = datetime.strptime(from_date, "%Y-%m-%d").year
+    except (ValueError, TypeError):
         year = datetime.now().year
     
     expenses_worksheet = f"Expenses {year}"
-    imports_worksheet = f"Statement Imports {year}"
+    imports_worksheet = "Chase"
 
     if not sheet_key:
         print("Error: SPREADSHEET_KEY not found in .env")
@@ -53,11 +60,11 @@ def main(year=None, auto_append=False):
     print(f"\n--- Step 1: Initial Sync (Optional) ---")
     sync_choice = input(f"Do you want to refresh '{expenses_worksheet}' from Splitwise first? (y/n): ").lower()
     if sync_choice == 'y':
-        print(f"Exporting Splitwise {year} transactions to '{expenses_worksheet}'...")
+        print(f"Exporting Splitwise {from_date} to {to_date} transactions to '{expenses_worksheet}'...")
         try:
             fetch_and_write(
-                start_date=f"{year}-01-01",
-                end_date=f"{year}-12-31",
+                start_date=from_date,
+                end_date=to_date,
                 sheet_key=sheet_key,
                 worksheet_name=expenses_worksheet,
                 append=False # Full refresh
@@ -178,18 +185,27 @@ def main(year=None, auto_append=False):
     cols_order = [c for c in cols_order if c in results_df.columns]
     results_df = results_df[cols_order]
 
-    # Delete and recreate the Statement Imports tab to guarantee a clean slate
+    # Delete and recreate (or clear and replace if named 'Chase') to guarantee a clean slate
     # (avoids leftover data validation / currency formatting from old sessions)
     import pygsheets
     from src.common.sheets_sync import SHEETS_AUTHENTICATION_FILE
     gc = pygsheets.authorize(service_account_file=SHEETS_AUTHENTICATION_FILE)
     spreadsheet = gc.open_by_key(sheet_key)
-    try:
-        old_ws = spreadsheet.worksheet_by_title(imports_worksheet)
-        spreadsheet.del_worksheet(old_ws)
-    except Exception:
-        pass  # Sheet didn't exist — that's fine
-    new_ws = spreadsheet.add_worksheet(imports_worksheet, rows=len(results_df)+1, cols=len(results_df.columns))
+    if imports_worksheet == "Chase":
+        try:
+            new_ws = spreadsheet.worksheet_by_title(imports_worksheet)
+            new_ws.frozen_rows = 0
+            new_ws.clear()
+            new_ws.resize(rows=len(results_df)+1, cols=len(results_df.columns))
+        except Exception:
+            new_ws = spreadsheet.add_worksheet(imports_worksheet, rows=len(results_df)+1, cols=len(results_df.columns))
+    else:
+        try:
+            old_ws = spreadsheet.worksheet_by_title(imports_worksheet)
+            spreadsheet.del_worksheet(old_ws)
+        except Exception:
+            pass  # Sheet didn't exist — that's fine
+        new_ws = spreadsheet.add_worksheet(imports_worksheet, rows=len(results_df)+1, cols=len(results_df.columns))
     new_ws.set_dataframe(results_df, (1, 1), copy_head=True, copy_index=False)
     print(f"Wrote {len(results_df)} rows to '{imports_worksheet}' in spreadsheet {sheet_key}.")
     
@@ -264,10 +280,16 @@ if __name__ == "__main__":
         description="Interactive expense workflow for processing bank statements with Google Sheets"
     )
     parser.add_argument(
-        "--year",
-        type=int,
+        "--from-date",
+        type=str,
         default=None,
-        help="Year to process (e.g., 2025, 2026). Defaults to current year."
+        help="Start date for Splitwise sync (YYYY-MM-DD). Defaults to Jan 1 of current year."
+    )
+    parser.add_argument(
+        "--to-date",
+        type=str,
+        default=None,
+        help="End date for Splitwise sync (YYYY-MM-DD). Defaults to Dec 31 of current year."
     )
     parser.add_argument(
         "--auto-append",
@@ -275,4 +297,4 @@ if __name__ == "__main__":
         help="Skip the manual-review pause and append approved rows from the review tab directly to the canonical sheet."
     )
     args = parser.parse_args()
-    main(year=args.year, auto_append=args.auto_append)
+    main(from_date=args.from_date, to_date=args.to_date, auto_append=args.auto_append)
