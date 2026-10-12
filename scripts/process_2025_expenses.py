@@ -58,7 +58,7 @@ def main(from_date=None, to_date=None, auto_append=False):
         return
 
     print(f"\n--- Step 1: Initial Sync (Optional) ---")
-    sync_choice = input(f"Do you want to refresh '{expenses_worksheet}' from Splitwise first? (y/n): ").lower()
+    sync_choice = input(f"Do you want to sync '{expenses_worksheet}' from Splitwise first? (y/n): ").lower()
     if sync_choice == 'y':
         print(f"Exporting Splitwise {from_date} to {to_date} transactions to '{expenses_worksheet}'...")
         try:
@@ -67,7 +67,7 @@ def main(from_date=None, to_date=None, auto_append=False):
                 end_date=to_date,
                 sheet_key=sheet_key,
                 worksheet_name=expenses_worksheet,
-                append=False # Full refresh
+                append=True # Changed to True so it doesn't wipe existing bank transactions
             )
             print("Splitwise sync complete.")
         except Exception as e:
