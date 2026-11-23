@@ -2,9 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Branch context
+## Repo history
 
-The active branch (`setup-project-krithika`) is a deliberate slim-down of `main`. Large swaths of `main` — the SQLite `database/` layer, `db_sync/`, `merchant_review/`, `update/`, `import_statement/pipeline.py`, `import_statement/categorization.py`, `process_refunds.py`, `export/monthly_export_pipeline.py`, `export/generate_summaries.py`, the entire `docs/` and `tests/` trees, and all multi-bank (Amex/BoFA) support — have been removed. `git status` lists them as deleted. **Do not re-import or reference those modules**; the working tree is the source of truth. [`.github/copilot-instructions.md`](.github/copilot-instructions.md) describes the old, richer architecture and is **out of date** for this branch.
+This repo is a fork of `bsundar2/SplitwiseAnalyzer` (the `upstream` remote) that was deliberately slimmed down. The upstream's SQLite `database/` layer, `db_sync/`, `merchant_review/`, `update/`, `import_statement/pipeline.py`, `import_statement/categorization.py`, `process_refunds.py`, `export/monthly_export_pipeline.py`, `export/generate_summaries.py`, the `docs/` and `tests/` trees, and all multi-bank (Amex/BoFA) support were removed. **Do not re-import or reference those modules**, and don't merge `upstream/main` wholesale — it would bring them back. The working tree is the source of truth. [`.github/copilot-instructions.md`](.github/copilot-instructions.md) describes the old upstream architecture and is **out of date**.
 
 ## Common commands
 
@@ -18,12 +18,17 @@ pip install -r requirements.txt
 source .venv/bin/activate
 export PYTHONPATH=$PWD
 
-# Run the main (and currently only) workflow
+# Import a Chase statement into the sheet (main workflow)
 python scripts/process_2025_expenses.py                # current year
 python scripts/process_2025_expenses.py --year 2026    # override year
+
+# Read-only dashboard (Spending + Net Worth), deployed to Render via render.yaml
+DASHBOARD_PASSWORD=<pw> uvicorn --factory dashboard.server:create_app --port 2718
 ```
 
-No test suite, lint config, or build step exists on this branch — all of `tests/` was removed. The coding-style guide ([.github/coding_style.md](.github/coding_style.md)) recommends `pylint --disable=all --enable=unused-import,unused-variable src/` for dead-code detection, but pylint is not in `requirements.txt`.
+The dashboard ([dashboard/](dashboard/)) is separate from `src/`: marimo pages that read `Expenses {YEAR}` and the net worth sheet's `Holdings {YEAR}` tabs directly. See the Dashboard section of [README.md](README.md).
+
+No test suite, lint config, or build step exists — all of `tests/` was removed. The coding-style guide ([.github/coding_style.md](.github/coding_style.md)) recommends `pylint --disable=all --enable=unused-import,unused-variable src/` for dead-code detection, but pylint is not in `requirements.txt`.
 
 ## Architecture: Sheet-First workflow
 
