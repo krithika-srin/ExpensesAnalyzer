@@ -20,6 +20,9 @@ CACHE_SECONDS = 300
 # being spent: they're already in net worth as home equity, so the Spending
 # page lists them separately instead of counting them as spending.
 HOUSE_PURCHASE_PATTERN = r"down payment|^mortgage deposit$"
+
+# Holdings groups left out of "non-retirement net worth" (money locked up until retirement)
+RETIREMENT_GROUPS = ("Retirement", "Health Savings")
 DEFAULT_AUTH_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "gsheets_authentication.json")
 
 EXPENSES_TAB = "Expenses {year}"

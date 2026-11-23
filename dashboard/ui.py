@@ -76,6 +76,8 @@ STYLE = """
 
   .t-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
             background: #1e2330; border-bottom: 1px solid #1e2330; }
+  .t-kpis-5 { grid-template-columns: repeat(5, 1fr); }
+  .t-kpis-5 .t-kpi-value { font-size: 1.7rem; }
   .t-kpi { background: #111318; padding: 1.4rem 1.8rem; position: relative; }
   .t-kpi::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
   .t-kpi.pos::before { background: #00d17a; }
@@ -135,9 +137,9 @@ STYLE = """
 
   @media (max-width: 640px) {
     .t-header { padding: 1.4rem 1.2rem 1rem; }
-    .t-kpis { grid-template-columns: repeat(2, 1fr); }
+    .t-kpis, .t-kpis-5 { grid-template-columns: repeat(2, 1fr); }
     .t-kpi { padding: 1rem 1.1rem; }
-    .t-kpi-value { font-size: 1.4rem; }
+    .t-kpi-value, .t-kpis-5 .t-kpi-value { font-size: 1.4rem; }
     .t-section { padding: 1.1rem 1.2rem 0.6rem; }
     .t-table th, .t-table td { padding: 0.55rem 1rem; }
     .t-table { font-size: 0.8rem; }
@@ -204,7 +206,8 @@ def kpi(label: str, value: str, sub: str = "", cls: str = "hi", value_cls: str =
 
 
 def kpi_row(*tiles: str) -> str:
-    return f'<div class="t-kpis">{"".join(tiles)}</div>'
+    cls = "t-kpis t-kpis-5" if len(tiles) == 5 else "t-kpis"
+    return f'<div class="{cls}">{"".join(tiles)}</div>'
 
 
 def legend(names, colors) -> str:

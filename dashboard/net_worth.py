@@ -46,8 +46,10 @@ def _(d, refresh, ui):
 
 
 @app.cell
-def _(d, latest, mo, pd, refresh, split, totals, ui):
+def _(d, latest, mo, nw, pd, refresh, totals, ui):
     _now = totals.loc[latest, d.END]
+    _cur = nw[nw[d.MONTH] == latest]
+    _non_ret = _cur.loc[~_cur[d.GROUP].isin(d.RETIREMENT_GROUPS), d.END].sum()
     _month = _now - totals.loc[latest, d.BEGIN]
     _jan = pd.Timestamp(year=latest.year, month=1, day=1)
     _ytd_start = totals.loc[_jan, d.BEGIN] if _jan in totals.index else totals[d.BEGIN].iloc[0]
@@ -55,9 +57,10 @@ def _(d, latest, mo, pd, refresh, split, totals, ui):
     _all = _now - totals[d.BEGIN].iloc[0]
     mo.Html(ui.block(
         ui.header("Net Worth", f"Holdings · As of end of {latest:%b %Y}"),
-        f'<div class="t-filter-row">{mo.as_html(refresh)}{mo.as_html(split)}</div>',
+        f'<div class="t-filter-row">{mo.as_html(refresh)}</div>',
         ui.kpi_row(
             ui.kpi("Net worth", ui.money(_now), f"as of end of {latest:%b %Y}"),
+            ui.kpi("Non-retirement net worth", ui.money(_non_ret), "excludes retirement &amp; HSA", "amb"),
             ui.kpi(f"Change in {latest:%b}", ui.money(_month, True), "ending minus beginning",
                    ui.tone(_month) or "amb", ui.tone(_month)),
             ui.kpi(f"Change in {latest:%Y}", ui.money(_ytd, True), f"since Jan 1 ({ui.money(_ytd_start)})",
@@ -70,19 +73,31 @@ def _(d, latest, mo, pd, refresh, split, totals, ui):
 
 
 @app.cell
-def _(d, group_colors, groups, mo, nw, split, totals, ui):
-    _labels = [m.strftime("%b %y") for m in totals.index]
+def _(mo, totals):
+    _years = sorted({str(m.year) for m in totals.index}, reverse=True)
+    chart_year = mo.ui.dropdown(["All years"] + _years, value="All years", label="Year")
+    return (chart_year,)
+
+
+@app.cell
+def _(chart_year, d, group_colors, groups, mo, nw, split, totals, ui):
+    _shown = totals if chart_year.value == "All years" else totals[totals.index.year == int(chart_year.value)]
+    _labels = [m.strftime("%b %y") for m in _shown.index]
     if split.value:
         _p = nw.pivot_table(index=d.MONTH, columns=d.GROUP, values=d.END, aggfunc="sum", fill_value=0.0)
-        _p = _p.reindex(index=totals.index, columns=groups, fill_value=0.0)
+        _p = _p.reindex(index=_shown.index, columns=groups, fill_value=0.0)
         _series = {g: _p[g].tolist() for g in groups}
-        _svg = ui.stacked_bars_svg(_labels, _series, group_colors, line=totals[d.END].tolist())
+        _svg = ui.stacked_bars_svg(_labels, _series, group_colors, line=_shown[d.END].tolist())
         _legend = ui.legend(groups + ["Net worth"], group_colors + ["#e8edf5"])
     else:
-        _svg = ui.stacked_bars_svg(_labels, {"Net worth": totals[d.END].tolist()}, [ui.PALETTE[0]])
+        _svg = ui.stacked_bars_svg(_labels, {"Net worth": _shown[d.END].tolist()}, [ui.PALETTE[0]])
         _legend = ui.legend(["Net worth"], [ui.PALETTE[0]])
-    mo.Html(ui.block(ui.section("Net worth over time (end of month)"), _legend,
-                     f'<div class="t-chart">{_svg}</div>'))
+    mo.Html(ui.block(
+        ui.section("Net worth over time (end of month)"),
+        f'<div class="t-filter-row">{mo.as_html(chart_year)}{mo.as_html(split)}</div>',
+        _legend,
+        f'<div class="t-chart">{_svg}</div>',
+    ))
     return
 
 
