@@ -1,0 +1,4 @@
+# marimo's own frame and widgets (buttons, dropdowns, number inputs) use its
+# dark theme, to match the dashboards' dark styling (same as RobinhoodToSheets).
+[display]
+theme = "dark"

@@ -11,13 +11,12 @@ def _():
 
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-    import altair as alt
     import marimo as mo
     import pandas as pd
 
     from dashboard import data as d
     from dashboard import ui
-    return alt, d, mo, pd, ui
+    return d, mo, pd, ui
 
 
 @app.cell
@@ -32,8 +31,11 @@ def _(d, mo, ui):
     year = mo.ui.dropdown([str(y) for y in _years], value=str(_years[-1]), label="Year")
     threshold = mo.ui.number(start=0, stop=1_000_000, step=500, value=5000,
                              label="List one-offs of at least ($) separately")
-    refresh = mo.ui.button(label="Refresh from sheet", value=0, on_click=lambda v: v + 1)
-    mo.hstack([year, threshold, refresh], justify="start", gap=2)
+    refresh = mo.ui.button(label="Refresh from sheet", kind="neutral", value=0, on_click=lambda v: v + 1)
+    mo.Html(ui.block(
+        ui.header("Spending", "Expenses sheet · Your share (My Owed)"),
+        f'<div class="t-filter-row">{mo.as_html(year)}{mo.as_html(threshold)}{mo.as_html(refresh)}</div>',
+    ))
     return refresh, threshold, year
 
 
@@ -52,79 +54,107 @@ def _(d, everyday, expenses, mo, one_offs, pd, ui):
     _this = _monthly.iloc[-1] if len(_monthly) else 0.0
     _prev = _monthly.iloc[-2] if len(_monthly) > 1 else 0.0
     _last = _monthly.index[-1] if len(_monthly) else pd.Timestamp.today()
-    mo.Html(ui.kpi_row(
+    _change_cls = ui.tone(_this - _prev, good_when_positive=False)
+    mo.Html(ui.block(ui.kpi_row(
         ui.kpi("Spent this year", ui.money(_total), f"{len(expenses)} expenses incl. one-offs"),
-        ui.kpi(f"Spent in {_last:%b}", ui.money(_this), f"{ui.money(_this - _prev, True)} vs {(_last - pd.DateOffset(months=1)):%b}",
-               ui.tone(_this - _prev, good_when_positive=False)),
+        ui.kpi(f"Spent in {_last:%b}", ui.money(_this),
+               f"{ui.money(_this - _prev, True)} vs {(_last - pd.DateOffset(months=1)):%b}", _change_cls or "amb"),
         ui.kpi("Average month", ui.money(_monthly.mean() if len(_monthly) else 0), "excluding one-offs"),
-        ui.kpi("One-offs", ui.money(one_offs[d.AMOUNT].sum()), f"{len(one_offs)} expense(s)"),
+        ui.kpi("One-offs", ui.money(one_offs[d.AMOUNT].sum()), f"{len(one_offs)} expense(s)", "amb"),
+    )))
+    return
+
+
+@app.cell
+def _(d, everyday, mo, ui):
+    _cats = sorted(everyday[d.CATEGORY].unique())
+    category = mo.ui.dropdown(["All categories"] + _cats, value="All categories", label="Drill into")
+    mo.Html(ui.block(f'<div class="t-filter-row">{mo.as_html(category)}</div>'))
+    return (category,)
+
+
+@app.cell
+def _(category, d, everyday):
+    show_all = category.value == "All categories"
+    selected = everyday if show_all else everyday[everyday[d.CATEGORY] == category.value]
+    group_by = d.CATEGORY if show_all else d.SUBCATEGORY
+    return group_by, selected
+
+
+@app.cell
+def _(category, group_by, mo, selected, d, ui):
+    # Top 7 groups get their own color; the rest are lumped into "Other"
+    _totals = selected.groupby(group_by)[d.AMOUNT].sum().sort_values(ascending=False)
+    _top = list(_totals.index[:7])
+    _named = selected[group_by].where(selected[group_by].isin(_top), "Other")
+    _p = selected.assign(_g=_named).pivot_table(index=d.MONTH, columns="_g", values=d.AMOUNT,
+                                                aggfunc="sum", fill_value=0.0).sort_index()
+    _names = [g for g in _top + ["Other"] if g in _p.columns]
+    _colors = ui.PALETTE[:len(_top)] + ([ui.OTHER_COLOR] if "Other" in _names else [])
+    _labels = [m.strftime("%b") for m in _p.index]
+    _series = {g: _p[g].tolist() for g in _names}
+    mo.Html(ui.block(
+        ui.section(f"Spending by month: {category.value}"),
+        ui.legend(_names, _colors),
+        f'<div class="t-chart">{ui.stacked_bars_svg(_labels, _series, _colors)}</div>',
     ))
     return
 
 
 @app.cell
-def _(d, everyday, mo):
-    _cats = sorted(everyday[d.CATEGORY].unique())
-    category = mo.ui.dropdown(["All categories"] + _cats, value="All categories", label="Drill into")
-    category
-    return (category,)
-
-
-@app.cell
-def _(alt, category, d, everyday, mo):
-    _all = category.value == "All categories"
-    _df = everyday if _all else everyday[everyday[d.CATEGORY] == category.value]
-    _by = d.CATEGORY if _all else d.SUBCATEGORY
-    _agg = _df.groupby([d.MONTH, _by], as_index=False)[d.AMOUNT].sum()
-    _chart = (
-        alt.Chart(_agg)
-        .mark_bar()
-        .encode(
-            x=alt.X(f"yearmonth({d.MONTH}):O", title=None, axis=alt.Axis(format="%b")),
-            y=alt.Y(f"sum({d.AMOUNT}):Q", title="Your share ($)", axis=alt.Axis(format="$,.0f")),
-            color=alt.Color(f"{_by}:N", title=_by.title()),
-            tooltip=[alt.Tooltip(f"yearmonth({d.MONTH}):O", title="Month", format="%b %Y"),
-                     alt.Tooltip(f"{_by}:N", title=_by.title()),
-                     alt.Tooltip(f"sum({d.AMOUNT}):Q", title="Amount", format="$,.2f")],
-        )
-        .properties(height=340, title=f"Spending by month: {category.value}")
-    )
-    mo.ui.altair_chart(_chart)
+def _(d, group_by, mo, selected, ui):
+    _totals = selected.groupby(group_by)[d.AMOUNT].sum().sort_values(ascending=False)
+    _sum = _totals.sum() or 1
+    _items = [(name, v, f"{ui.money(v)} ({v / _sum:.0%})",
+               ui.PALETTE[i] if i < 7 else ui.OTHER_COLOR) for i, (name, v) in enumerate(_totals.items())]
+    mo.Html(ui.block(ui.section(f"Spend by {group_by}"), ui.bar_rows(_items)))
     return
 
 
 @app.cell
-def _(category, d, everyday, mo):
-    _all = category.value == "All categories"
-    _df = everyday if _all else everyday[everyday[d.CATEGORY] == category.value]
-    _by = d.CATEGORY if _all else d.SUBCATEGORY
-    _pivot = _df.pivot_table(index=_by, columns=d.MONTH, values=d.AMOUNT, aggfunc="sum", fill_value=0.0)
-    _pivot.columns = [c.strftime("%b") for c in _pivot.columns]
-    _pivot["Total"] = _pivot.sum(axis=1)
-    _pivot = _pivot.sort_values("Total", ascending=False)
-    _pivot.loc["Total"] = _pivot.sum()
-    _fmt = {c: "${:,.0f}" for c in _pivot.columns}
-    mo.vstack([mo.md(f"### By {_by} and month"), mo.ui.table(_pivot.round(2).reset_index(), selection=None, format_mapping=_fmt, page_size=40)])
+def _(d, group_by, mo, selected, ui):
+    _p = selected.pivot_table(index=group_by, columns=d.MONTH, values=d.AMOUNT, aggfunc="sum", fill_value=0.0)
+    _months = [c.strftime("%b") for c in _p.columns]
+    _p["Total"] = _p.sum(axis=1)
+    _p = _p.sort_values("Total", ascending=False)
+    _p.loc["Total"] = _p.sum()
+    _rows = [[(ui.esc(name), "tk")] + [(ui.money(v) if v else "-", "" if v else "dim") for v in row]
+             for name, row in zip(_p.index, _p.to_numpy())]
+    _body = ui.table([group_by.title(), *_months, "Total"], _rows, total_last=True)
+    mo.Html(ui.block(
+        ui.section(f"By {group_by} and month"),
+        ui.fold(f"{len(_p) - 1} {group_by} rows", f"{ui.money(_p.loc['Total', 'Total'])} total", _body),
+    ))
     return
 
 
 @app.cell
-def _(d, everyday, mo):
+def _(d, everyday, mo, ui):
     _top = (everyday.groupby(d.DESCRIPTION)[d.AMOUNT].agg(["sum", "count"])
-            .sort_values("sum", ascending=False).head(15).reset_index())
-    _top.columns = ["Merchant", "Total", "Count"]
-    mo.vstack([mo.md("### Top merchants"),
-               mo.ui.table(_top.round(2), selection=None, format_mapping={"Total": "${:,.2f}"}, page_size=15)])
+            .sort_values("sum", ascending=False).head(15))
+    _rows = [[(ui.esc(name), "tk"), (f"${total:,.2f}", ""), (str(int(count)), "dim"),
+              (f"${total / count:,.2f}", "dim")]
+             for name, (total, count) in zip(_top.index, _top.to_numpy())]
+    mo.Html(ui.block(
+        ui.section("Top merchants"),
+        ui.fold(f"{len(_top)} merchants", f"{ui.money(_top['sum'].sum())} total",
+                ui.table(["Merchant", "Total", "Count", "Avg"], _rows)),
+    ))
     return
 
 
 @app.cell
-def _(d, mo, one_offs):
-    _t = one_offs[[d.DATE, d.CATEGORY, d.SUBCATEGORY, d.DESCRIPTION, d.AMOUNT]].sort_values(d.DATE).copy()
-    _t[d.DATE] = _t[d.DATE].dt.strftime("%Y-%m-%d")
-    mo.vstack([mo.md("### One-off expenses (kept out of the charts above)"),
-               mo.ui.table(_t.round(2), selection=None, format_mapping={d.AMOUNT: "${:,.2f}"})
-               if len(_t) else mo.md("_None at this threshold._")])
+def _(d, mo, one_offs, ui):
+    _t = one_offs.sort_values(d.DATE)
+    if len(_t):
+        _rows = [[(f"{r[d.DATE]:%Y-%m-%d}", "dim"), (ui.esc(r[d.CATEGORY]), ""), (ui.esc(r[d.SUBCATEGORY]), "dim"),
+                  (ui.esc(r[d.DESCRIPTION]), "tk"), (f"${r[d.AMOUNT]:,.2f}", "")] for _, r in _t.iterrows()]
+        _body = ui.fold(f"{len(_t)} expense(s)", f"{ui.money(_t[d.AMOUNT].sum())} total",
+                        ui.table(["Date", "Category", "Subcategory", "Description", "Amount"], _rows, num_from=4),
+                        open_=True)
+    else:
+        _body = ui.note("None at this threshold.")
+    mo.Html(ui.block(ui.section("One-off expenses (kept out of the charts above)"), _body))
     return
 
 
