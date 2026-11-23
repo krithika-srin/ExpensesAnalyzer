@@ -122,6 +122,27 @@ CREATE INDEX IF NOT EXISTS idx_year_month ON monthly_summaries(year_month);
 CREATE INDEX IF NOT EXISTS idx_written ON monthly_summaries(written_to_sheet);
 """
 
+HOLDINGS_TABLE = """
+CREATE TABLE IF NOT EXISTS holdings (
+    -- Monthly account balance snapshots (source: Money sheet "Holdings YYYY" tabs)
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    year_month TEXT NOT NULL,              -- YYYY-MM
+    account_key TEXT NOT NULL,             -- "Account | Sub-Type", stable per account
+    account TEXT NOT NULL,                 -- Institution (e.g. "Fidelity")
+    account_type TEXT NOT NULL,            -- Investment, Savings, Retirement, Health Savings
+    sub_type TEXT,                         -- e.g. "401K [AMZN]", "Joint Savings"
+    beginning_balance REAL,
+    ending_balance REAL,
+    source TEXT NOT NULL,                  -- money_sheet, manual, ...
+    synced_at TEXT NOT NULL,
+
+    UNIQUE(year_month, account_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_holdings_year_month ON holdings(year_month);
+CREATE INDEX IF NOT EXISTS idx_holdings_account_type ON holdings(account_type);
+"""
+
 
 def init_database(conn):
     """Initialize database schema.
@@ -136,5 +157,6 @@ def init_database(conn):
     cursor.executescript(DUPLICATES_TABLE)
     cursor.executescript(IMPORT_LOG_TABLE)
     cursor.executescript(MONTHLY_SUMMARIES_TABLE)
+    cursor.executescript(HOLDINGS_TABLE)
 
     conn.commit()
