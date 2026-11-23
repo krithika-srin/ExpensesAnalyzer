@@ -41,10 +41,13 @@ def _(d, mo, ui):
 
 @app.cell
 def _(d, refresh, threshold, ui, year):
-    expenses = d.load_expenses(ui.EXPENSES_KEY, int(year.value), version=refresh.value)
+    _all = d.load_expenses(ui.EXPENSES_KEY, int(year.value), version=refresh.value)
+    _purchase = d.is_house_purchase(_all)
+    house = _all[_purchase]
+    expenses = _all[~_purchase]
     one_offs = expenses[expenses[d.AMOUNT] >= threshold.value] if threshold.value else expenses.iloc[0:0]
     everyday = expenses.drop(one_offs.index)
-    return everyday, expenses, one_offs
+    return everyday, expenses, house, one_offs
 
 
 @app.cell
@@ -155,6 +158,24 @@ def _(d, mo, one_offs, ui):
     else:
         _body = ui.note("None at this threshold.")
     mo.Html(ui.block(ui.section("One-off expenses (kept out of the charts above)"), _body))
+    return
+
+
+@app.cell
+def _(d, house, mo, ui):
+    # Only shown in a year with house-purchase rows
+    if len(house):
+        _rows = [[(f"{r[d.DATE]:%Y-%m-%d}", "dim"), (ui.esc(r[d.DESCRIPTION]), "tk"), (f"${r[d.AMOUNT]:,.2f}", "")]
+                 for _, r in house.sort_values(d.DATE).iterrows()]
+        _out = ui.block(
+            ui.section("House purchase (not counted as spending)"),
+            ui.note("Already in net worth as home equity, so left out of every total above."),
+            ui.fold(f"{len(house)} payment(s)", f"{ui.money(house[d.AMOUNT].sum())} your share",
+                    ui.table(["Date", "Description", "Amount"], _rows, num_from=2), open_=True),
+        )
+    else:
+        _out = ""
+    mo.Html(_out)
     return
 
 

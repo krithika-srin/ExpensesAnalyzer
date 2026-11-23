@@ -15,6 +15,11 @@ import pandas as pd
 import pygsheets
 
 CACHE_SECONDS = 300
+
+# Expense rows that bought the house (earnest money, down payment) rather than
+# being spent: they're already in net worth as home equity, so the Spending
+# page lists them separately instead of counting them as spending.
+HOUSE_PURCHASE_PATTERN = r"down payment|^mortgage deposit$"
 DEFAULT_AUTH_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "gsheets_authentication.json")
 
 EXPENSES_TAB = "Expenses {year}"
@@ -88,6 +93,11 @@ def load_expenses(sheet_key: str, year: int, version: int = 0, refresh: bool = F
         out[MONTH] = out[DATE].dt.to_period("M").dt.to_timestamp()
         return out.reset_index(drop=True)
     return _cached(f"exp:{sheet_key}:{year}:{version}", load, refresh)
+
+
+def is_house_purchase(expenses: pd.DataFrame) -> pd.Series:
+    """True for rows matching HOUSE_PURCHASE_PATTERN (see its comment)."""
+    return expenses[DESCRIPTION].str.contains(HOUSE_PURCHASE_PATTERN, case=False, regex=True)
 
 
 # ── Net worth ─────────────────────────────────────────────────────────────
