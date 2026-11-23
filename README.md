@@ -51,6 +51,18 @@ A Python project to import Splitwise expenses, process credit card statements, c
 
 See [docs/database_sync_guide.md](docs/database_sync_guide.md) for detailed architecture guide.
 
+## Holdings and Net Worth
+
+Monthly account balances are read from the Money sheet's `Holdings YYYY` tabs into the
+same database, and combined with spending into a **Net Worth** tab (balances by type,
+month-over-month change, and how many months of spending your savings cover):
+
+```bash
+python src/holdings/sync_holdings.py --years 2026 --write-summary
+```
+
+See [docs/holdings_guide.md](docs/holdings_guide.md).
+
 ## Setup
 1. Create a virtual environment: `python -m venv .venv`
 2. Activate the environment: `source .venv/bin/activate`

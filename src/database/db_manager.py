@@ -7,11 +7,26 @@ from functools import cache
 from typing import List, Optional, Dict, Any
 from contextlib import contextmanager
 
-from .schema import init_database
+from .schema import HOLDINGS_TABLE, init_database
 from .models import Transaction, ImportLog
 
 # SQL query constants
 DELETED_FILTER_CLAUSE = "(splitwise_deleted_at IS NULL OR splitwise_deleted_at = '')"
+SQL_ORDER_HOLDINGS = "ORDER BY year_month, account_type, account_key"
+SQL_UPSERT_HOLDING = """
+INSERT INTO holdings (
+    year_month, account_key, account, account_type, sub_type,
+    beginning_balance, ending_balance, source, synced_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(year_month, account_key) DO UPDATE SET
+    account = excluded.account,
+    account_type = excluded.account_type,
+    sub_type = excluded.sub_type,
+    beginning_balance = excluded.beginning_balance,
+    ending_balance = excluded.ending_balance,
+    source = excluded.source,
+    synced_at = excluded.synced_at
+"""
 
 
 class DatabaseManager:
@@ -41,6 +56,10 @@ class DatabaseManager:
         if is_new:
             print(f"Initializing new database at {self.db_path}")
             init_database(conn)
+        else:
+            # Tables added after the DB was first created (idempotent)
+            conn.executescript(HOLDINGS_TABLE)
+            conn.commit()
 
         conn.close()
 
@@ -829,6 +848,69 @@ class DatabaseManager:
 
         conn.commit()
         conn.close()
+
+
+    # ==================== Holdings ====================
+
+    def upsert_holdings(self, snapshots: List[Dict[str, Any]]) -> int:
+        """Insert or update monthly balance snapshots.
+
+        Args:
+            snapshots: Dicts with year_month, account_key, account, account_type,
+                sub_type, beginning_balance, ending_balance, source
+
+        Returns:
+            Number of rows written
+        """
+        if not snapshots:
+            return 0
+        synced_at = datetime.utcnow().isoformat()
+        rows = [
+            (
+                s["year_month"],
+                s["account_key"],
+                s["account"],
+                s["account_type"],
+                s["sub_type"],
+                s["beginning_balance"],
+                s["ending_balance"],
+                s["source"],
+                synced_at,
+            )
+            for s in snapshots
+        ]
+        with self.transaction() as conn:
+            conn.executemany(SQL_UPSERT_HOLDING, rows)
+        return len(rows)
+
+    def delete_holdings_for_months(self, year_months: List[str]) -> int:
+        """Remove snapshots for the given months (used before a full re-sync of a year)."""
+        if not year_months:
+            return 0
+        placeholders = ", ".join(["?"] * len(year_months))
+        with self.transaction() as conn:
+            cursor = conn.execute(
+                f"DELETE FROM holdings WHERE year_month IN ({placeholders})", year_months
+            )
+            return cursor.rowcount
+
+    def get_holdings(
+        self, start_month: Optional[str] = None, end_month: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Fetch holdings snapshots, optionally bounded by YYYY-MM months (inclusive)."""
+        query = "SELECT * FROM holdings WHERE 1=1"
+        params: List[str] = []
+        if start_month:
+            query += " AND year_month >= ?"
+            params.append(start_month)
+        if end_month:
+            query += " AND year_month <= ?"
+            params.append(end_month)
+        query += f" {SQL_ORDER_HOLDINGS}"
+        conn = self.get_connection()
+        rows = [dict(r) for r in conn.execute(query, params).fetchall()]
+        conn.close()
+        return rows
 
 
 @cache
