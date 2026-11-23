@@ -1,6 +1,10 @@
+altair
 dateparser>=1.1.0
+itsdangerous
+marimo>=0.25.2
 pandas
 pygsheets
 python-dotenv
 PyYAML
 splitwise
+uvicorn

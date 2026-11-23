@@ -159,6 +159,44 @@ The expense processing workflow can be automated with these steps:
 - Email/Slack notifications on completion or errors
 - Automatic merchant review aggregation and reporting
 
+## Dashboard
+
+A read-only web dashboard ([dashboard/](dashboard/)) built with marimo, with two pages behind one password:
+
+- **Spending** (`/`) — reads `Expenses {YEAR}` (the `My Owed` column) from the expenses spreadsheet. Pick a year, set a threshold to pull large one-off expenses out of the monthly averages.
+- **Net Worth** (`/net-worth`) — reads every `Holdings {YEAR}` tab from a separate net worth spreadsheet. A month only appears once every account has an ending balance.
+
+Sheet data is cached for 5 minutes; use the **Refresh from sheet** button to reload immediately.
+
+**Environment variables**
+
+| Variable | Purpose |
+|---|---|
+| `DASHBOARD_PASSWORD` | Login password (required). Changing it logs everyone out. |
+| `EXPENSES_SPREADSHEET_KEY` | Expenses spreadsheet. Falls back to `SPREADSHEET_KEY`. |
+| `NET_WORTH_SPREADSHEET_KEY` | Net worth spreadsheet. |
+| `GSHEETS_AUTH_FILE` | Service-account JSON. Defaults to `config/gsheets_authentication.json`. |
+
+Locally these are read from `config/.env`. Both spreadsheets must be shared with the service-account email.
+
+**Run locally**
+
+```bash
+source .venv/bin/activate
+DASHBOARD_PASSWORD=<password> uvicorn --factory dashboard.server:create_app --port 2718
+```
+
+Then open http://localhost:2718. To edit a page interactively: `marimo edit dashboard/spending.py`.
+
+**Deploy on Render**
+
+[render.yaml](render.yaml) defines the service. In the Render dashboard, create a Blueprint from this repo, then:
+
+1. Set `DASHBOARD_PASSWORD`, `EXPENSES_SPREADSHEET_KEY`, and `NET_WORTH_SPREADSHEET_KEY`.
+2. Under **Secret Files**, upload `config/gsheets_authentication.json` with the filename `gsheets_authentication.json` (Render mounts it at `/etc/secrets/`).
+
+The free plan sleeps when idle, so the first load after a while takes ~30 seconds.
+
 ## Troubleshooting
 
 **Import fails with "ModuleNotFoundError"**: Set PYTHONPATH to project root (e.g., `export PYTHONPATH=$PWD`)  

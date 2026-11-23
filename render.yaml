@@ -1,0 +1,22 @@
+services:
+  # Spending (/) and Net Worth (/net-worth) dashboards behind one password.
+  # See dashboard/server.py and the "Dashboard" section of README.md.
+  - type: web
+    name: expenses-dashboard
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn --factory dashboard.server:create_app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: DASHBOARD_PASSWORD
+        sync: false
+      # Upload config/gsheets_authentication.json as a Secret File named
+      # gsheets_authentication.json; Render mounts secret files here.
+      - key: GSHEETS_AUTH_FILE
+        value: /etc/secrets/gsheets_authentication.json
+      - key: EXPENSES_SPREADSHEET_KEY
+        sync: false
+      - key: NET_WORTH_SPREADSHEET_KEY
+        sync: false

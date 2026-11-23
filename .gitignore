@@ -17,3 +17,7 @@ htmlcov/
 coverage_report.txt
 *.cover
 .pytest_cache/
+
+# marimo local session state
+__marimo__/
+.DS_Store
