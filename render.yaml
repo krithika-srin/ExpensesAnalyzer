@@ -20,3 +20,13 @@ services:
         sync: false
       - key: NET_WORTH_SPREADSHEET_KEY
         sync: false
+      # Optional: subtracts what you owe your partner on Splitwise from net worth.
+      # Without these the Net Worth page shows the Holdings tabs alone.
+      - key: SPLITWISE_CONSUMER_KEY
+        sync: false
+      - key: SPLITWISE_CONSUMER_SECRET
+        sync: false
+      - key: SPLITWISE_API_KEY
+        sync: false
+      - key: SPLITWISE_PARTNER_ID
+        sync: false

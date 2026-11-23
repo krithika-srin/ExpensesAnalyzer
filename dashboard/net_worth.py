@@ -35,6 +35,7 @@ def _(mo):
 @app.cell
 def _(d, refresh, ui):
     nw = d.load_net_worth(ui.NET_WORTH_KEY, version=refresh.value)
+    owed = d.owed_on_splitwise(version=refresh.value)  # what you owe your partner today; None if unavailable
     totals = nw.groupby(d.MONTH)[[d.BEGIN, d.END]].sum().sort_index()
     latest = totals.index.max()
     # Known groups first, in their usual order, then any others (e.g. "Real Estate") alphabetically
@@ -42,14 +43,24 @@ def _(d, refresh, ui):
     groups = [g for g in ui.GROUP_COLORS if g in _present] + sorted(_present - set(ui.GROUP_COLORS))
     _extra = iter(c for c in ui.PALETTE if c not in ui.GROUP_COLORS.values())
     group_colors = [ui.GROUP_COLORS.get(g) or next(_extra, ui.OTHER_COLOR) for g in groups]
-    return group_colors, groups, latest, nw, totals
+    return group_colors, groups, latest, nw, owed, totals
 
 
 @app.cell
-def _(d, latest, mo, nw, pd, refresh, totals, ui):
+def _(d, latest, mo, nw, owed, pd, refresh, totals, ui):
     _now = totals.loc[latest, d.END]
     _cur = nw[nw[d.MONTH] == latest]
-    _non_ret = _cur.loc[~_cur[d.GROUP].isin(d.RETIREMENT_GROUPS), d.END].sum()
+    _debt = owed or 0.0
+    _net = _now - _debt
+    _non_ret = _cur.loc[~_cur[d.GROUP].isin(d.RETIREMENT_GROUPS), d.END].sum() - _debt
+    if owed is None:
+        _owed_note = "Holdings only (Splitwise not connected)"
+    elif owed > 0:
+        _owed_note = f"after {ui.money(owed)} you owe on Splitwise"
+    elif owed < 0:
+        _owed_note = f"incl. {ui.money(-owed)} owed to you on Splitwise"
+    else:
+        _owed_note = "Splitwise is settled up"
     _month = _now - totals.loc[latest, d.BEGIN]
     _jan = pd.Timestamp(year=latest.year, month=1, day=1)
     _ytd_start = totals.loc[_jan, d.BEGIN] if _jan in totals.index else totals[d.BEGIN].iloc[0]
@@ -59,7 +70,7 @@ def _(d, latest, mo, nw, pd, refresh, totals, ui):
         ui.header("Net Worth", f"Holdings · As of end of {latest:%b %Y}"),
         f'<div class="t-filter-row">{mo.as_html(refresh)}</div>',
         ui.kpi_row(
-            ui.kpi("Net worth", ui.money(_now), f"as of end of {latest:%b %Y}"),
+            ui.kpi("Net worth", ui.money(_net), _owed_note),
             ui.kpi("Non-retirement net worth", ui.money(_non_ret), "excludes retirement &amp; HSA", "amb"),
             ui.kpi(f"Change in {latest:%b}", ui.money(_month, True), "ending minus beginning",
                    ui.tone(_month) or "amb", ui.tone(_month)),
@@ -80,7 +91,7 @@ def _(mo, totals):
 
 
 @app.cell
-def _(chart_year, d, group_colors, groups, mo, nw, split, totals, ui):
+def _(chart_year, d, group_colors, groups, mo, nw, owed, split, totals, ui):
     _shown = totals if chart_year.value == "All years" else totals[totals.index.year == int(chart_year.value)]
     _labels = [m.strftime("%b %y") for m in _shown.index]
     if split.value:
@@ -97,6 +108,8 @@ def _(chart_year, d, group_colors, groups, mo, nw, split, totals, ui):
         f'<div class="t-filter-row">{mo.as_html(chart_year)}{mo.as_html(split)}</div>',
         _legend,
         f'<div class="t-chart">{_svg}</div>',
+        ui.note(f"Bars show the Holdings tabs only. The headline net worth also subtracts the {ui.money(owed)} "
+                "you currently owe on Splitwise.") if owed else "",
     ))
     return
 
@@ -112,7 +125,7 @@ def _(d, group_colors, groups, latest, mo, nw, ui):
 
 
 @app.cell
-def _(d, latest, mo, nw, pd, ui):
+def _(d, latest, mo, nw, owed, pd, ui):
     _jan = pd.Timestamp(year=latest.year, month=1, day=1)
     _cur = nw[nw[d.MONTH] == latest].set_index(d.ACCOUNT)
     _has_jan = (nw[d.MONTH] == _jan).any()
@@ -128,11 +141,16 @@ def _(d, latest, mo, nw, pd, ui):
     _rows = [[(ui.esc(acct), "tk"), (ui.esc(r[d.GROUP]), "dim"), (ui.money(r[d.END]), ""),
               _chg(r["month_chg"]), _chg(r["year_chg"]), (f"{r[d.END] / _sum:.1%}", "dim")]
              for acct, r in _t.iterrows()]
-    _rows.append([("Total", "tk"), ("", ""), (ui.money(_t[d.END].sum()), ""), _chg(_t["month_chg"].sum()),
-                  _chg(_t["year_chg"].sum(min_count=1)), ("100%", "dim")])
+    _total = _t[d.END].sum()
+    if owed:
+        _rows.append([("Splitwise balance (today)", "tk"), ("Debt" if owed > 0 else "Owed to you", "dim"),
+                      (ui.money(-owed), "neg" if owed > 0 else "pos"), ("-", "dim"), ("-", "dim"), ("-", "dim")])
+        _total -= owed
+    _rows.append([("Total", "tk"), ("", ""), (ui.money(_total), ""), _chg(_t["month_chg"].sum()),
+                  _chg(_t["year_chg"].sum(min_count=1)), ("", "")])
     mo.Html(ui.block(
         ui.section(f"Accounts at end of {latest:%b %Y}"),
-        ui.fold(f"{len(_t)} accounts", f"{ui.money(_t[d.END].sum())} total",
+        ui.fold(f"{len(_t)} accounts", f"{ui.money(_total)} total",
                 ui.table(["Account", "Group", "Balance", "This month", "This year", "Share"], _rows,
                          num_from=2, total_last=True), open_=True),
     ))

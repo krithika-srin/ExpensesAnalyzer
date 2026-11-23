@@ -176,6 +176,7 @@ Sheet data is cached for 5 minutes; use the **Refresh from sheet** button to rel
 | `EXPENSES_SPREADSHEET_KEY` | Expenses spreadsheet. Falls back to `SPREADSHEET_KEY`. |
 | `NET_WORTH_SPREADSHEET_KEY` | Net worth spreadsheet. |
 | `GSHEETS_AUTH_FILE` | Service-account JSON. Defaults to `config/gsheets_authentication.json`. |
+| `SPLITWISE_CONSUMER_KEY`, `SPLITWISE_CONSUMER_SECRET`, `SPLITWISE_API_KEY`, `SPLITWISE_PARTNER_ID` | Optional. The Net Worth page subtracts what you currently owe your partner on Splitwise. Without them it shows the Holdings tabs alone. |
 
 Locally these are read from `config/.env`. Both spreadsheets must be shared with the service-account email.
 
@@ -192,7 +193,7 @@ Then open http://localhost:2718. To edit a page interactively: `marimo edit dash
 
 [render.yaml](render.yaml) defines the service. In the Render dashboard, create a Blueprint from this repo, then:
 
-1. Set `DASHBOARD_PASSWORD`, `EXPENSES_SPREADSHEET_KEY`, and `NET_WORTH_SPREADSHEET_KEY`.
+1. Set `DASHBOARD_PASSWORD`, `EXPENSES_SPREADSHEET_KEY`, and `NET_WORTH_SPREADSHEET_KEY` (plus the four `SPLITWISE_*` values to include the Splitwise balance).
 2. Under **Secret Files**, upload `config/gsheets_authentication.json` with the filename `gsheets_authentication.json` (Render mounts it at `/etc/secrets/`).
 
 The free plan sleeps when idle, so the first load after a while takes ~30 seconds.

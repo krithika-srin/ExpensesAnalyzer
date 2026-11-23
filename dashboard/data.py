@@ -1,11 +1,13 @@
-"""Read-only loaders for the dashboard: 'Expenses {YEAR}' and the net worth 'Holdings {YEAR}' tabs.
+"""Read-only loaders for the dashboard: 'Expenses {YEAR}' and the net worth 'Holdings {YEAR}' tabs,
+plus the current Splitwise balance with your partner.
 
-Both return tidy pandas DataFrames. Results are cached for CACHE_SECONDS so
+The sheet loaders return tidy pandas DataFrames. Results are cached for CACHE_SECONDS so
 switching pages doesn't hit the Sheets API each time; pass refresh=True to
 force a reload.
 """
 
 import functools
+import logging
 import os
 import re
 import time
@@ -13,6 +15,11 @@ from datetime import date
 
 import pandas as pd
 import pygsheets
+import requests
+from splitwise import Splitwise
+from splitwise.exception import SplitwiseBaseException
+
+LOG = logging.getLogger("cc_splitwise")
 
 CACHE_SECONDS = 300
 
@@ -23,6 +30,9 @@ HOUSE_PURCHASE_PATTERN = r"down payment|^mortgage deposit$"
 
 # Holdings groups left out of "non-retirement net worth" (money locked up until retirement)
 RETIREMENT_GROUPS = ("Retirement", "Health Savings")
+
+SPLITWISE_ENV_VARS = ("SPLITWISE_CONSUMER_KEY", "SPLITWISE_CONSUMER_SECRET", "SPLITWISE_API_KEY", "SPLITWISE_PARTNER_ID")
+
 DEFAULT_AUTH_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "gsheets_authentication.json")
 
 EXPENSES_TAB = "Expenses {year}"
@@ -149,6 +159,35 @@ def load_net_worth(sheet_key: str, version: int = 0, refresh: bool = False) -> p
         df = df[per_month == per_year]
         return df.sort_values([MONTH, GROUP, ACCOUNT]).reset_index(drop=True)
     return _cached(f"nw:{sheet_key}:{version}", load, refresh)
+
+
+# ── Splitwise ─────────────────────────────────────────────────────────────
+
+def owed_on_splitwise(version: int = 0, refresh: bool = False):
+    """What you owe your partner on Splitwise right now, in USD (negative if they owe you).
+
+    It's a debt the Holdings tabs don't record, so the Net Worth page subtracts it.
+    Returns None when the Splitwise settings aren't set or the API can't be
+    reached; the page then shows Holdings alone and says so.
+    """
+    if not all(os.getenv(v) for v in SPLITWISE_ENV_VARS):
+        return None
+
+    def load():
+        sw = Splitwise(os.environ["SPLITWISE_CONSUMER_KEY"], os.environ["SPLITWISE_CONSUMER_SECRET"],
+                       api_key=os.environ["SPLITWISE_API_KEY"])
+        partner = int(os.environ["SPLITWISE_PARTNER_ID"])
+        friend = next((f for f in sw.getFriends() if f.getId() == partner), None)
+        if friend is None:
+            return 0.0
+        # Splitwise's balance is from your side: negative means you owe them
+        return -sum(float(b.getAmount()) for b in friend.getBalances() if b.getCurrencyCode() == "USD")
+
+    try:
+        return _cached(f"splitwise:{version}", load, refresh)
+    except (SplitwiseBaseException, requests.RequestException):
+        LOG.exception("Could not read the Splitwise balance")
+        return None
 
 
 def today() -> date:
